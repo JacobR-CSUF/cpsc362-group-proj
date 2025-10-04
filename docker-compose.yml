@@ -1,0 +1,235 @@
+version: '3.8'
+
+services:
+  # MinIO Object Storage (media storage for Supabase)
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - app-network
+
+  # Supabase Services
+  postgres:
+    image: supabase/postgres:15.1.0.117
+    container_name: supabase-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: your-super-secret-password
+      JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      JWT_EXP: 3600
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  kong:
+    image: kong:2.8.1
+    container_name: supabase-kong
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+    volumes:
+      - ./apps/api/app/services/kongapi_client.yml:/var/lib/kong/kong.yml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  auth:
+    image: supabase/gotrue:v2.99.0
+    container_name: supabase-auth
+    ports:
+      - "9999:9999"
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: http://localhost:8000
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:your-super-secret-password@postgres:5432/postgres?search_path=auth
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_DISABLE_SIGNUP: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  rest:
+    image: postgrest/postgrest:v11.2.0
+    container_name: supabase-rest
+    ports:
+      - "3001:3000"
+    environment:
+      PGRST_DB_URI: postgres://postgres:your-super-secret-password@postgres:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  realtime:
+    image: supabase/realtime:v2.25.35
+    container_name: supabase-realtime
+    ports:
+      - "4000:4000"
+    environment:
+      # Add this required variable
+      APP_NAME: realtime
+
+      # Database connection
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: your-super-secret-password
+      DB_SSL: "false"
+
+      # JWT configuration
+      JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+
+      # Realtime specific settings
+      REPLICATION_MODE: RLS
+      REPLICATION_POLL_INTERVAL: 100
+      SECURE_CHANNELS: "true"
+      SLOT_NAME: supabase_realtime_rls
+      TEMPORARY_SLOT: "true"
+
+      # Server configuration
+      PORT: 4000
+      DNS_NODES: "''"
+      ENABLE_TAILSCALE: "false"
+
+      # Additional required variables
+      API_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      DB_ENCRYPED_PASSWORD: your-super-secret-password
+      FLY_APP_NAME: realtime
+      FLY_ALLOC_ID: fly123
+      SECRET_KEY_BASE: your-secret-key-base-with-at-least-64-characters-long
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  
+  storage:
+    image: supabase/storage-api:v0.43.11
+    container_name: supabase-storage
+    ports:
+      - "5555:5000"
+    environment:
+      # Authentication keys
+      ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
+      SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
+      TENANT_ID: stub
+
+      # Database connection
+      POSTGREST_URL: http://rest:3000
+      DATABASE_URL: postgres://postgres:your-super-secret-password@postgres:5432/postgres
+      PGOPTIONS: -c search_path=storage,public
+
+      # JWT configuration
+      JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+
+      # File size limits
+      FILE_SIZE_LIMIT: 52428800
+      IS_MULTITENANT: "false"
+
+      # MinIO S3 Configuration
+      STORAGE_BACKEND: s3
+      GLOBAL_S3_BUCKET: supabase-storage
+      REGION: us-east-1
+      GLOBAL_S3_ENDPOINT: http://minio:9000
+      GLOBAL_S3_FORCE_PATH_STYLE: "true"
+
+      # AWS Credentials
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin123
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rest:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - app-network
+
+  meta:
+    image: supabase/postgres-meta:v0.68.0
+    container_name: supabase-meta
+    ports:
+      - "8080:8080"
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: postgres
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: your-super-secret-password
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  studio:
+    image: supabase/studio:latest
+    container_name: supabase-studio
+    ports:
+      - "3100:3000"
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: your-super-secret-password
+      DEFAULT_ORGANIZATION_NAME: My Organization
+      DEFAULT_PROJECT_NAME: My Project
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: http://localhost:8000
+      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      SUPABASE_SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
+
+    depends_on:
+      - postgres
+      - kong
+      - meta
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  minio_data:
+  postgres_data:
+  storage_data:
