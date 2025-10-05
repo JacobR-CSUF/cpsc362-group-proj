@@ -40,6 +40,7 @@ This project will:
     python -m venv venv
     source venv/bin/activate  # for Mac/Linux
     venv\Scripts\activate     # for Windows
+    docker-compose up -d # in your root repo directory
     ```
     
 2. Install dependencies:
@@ -58,11 +59,16 @@ This project will:
     pip install -r requirements.txt
     ```
     
-3. Run the development server:
+3. Access Backend (Supabase & MinIO):
+
+    **MinIO**  
+    Login at: [http://localhost:9001/](http://localhost:9001/)  
+    Username: `minioadmin`  
+    Password: `minioadmin123`
     
-    ```bash
-    uvicorn app.main:app --reload
-    ```
+    **Supabase**  
+    Login at: [http://localhost:3100/](http://localhost:3100/)  
+    No credentials required
 
 > 💡 **For Non-developers (Users)**  
 > 
