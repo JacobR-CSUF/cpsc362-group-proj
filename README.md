@@ -43,7 +43,17 @@ This project will:
     ```
     
 2. Install dependencies:
+    **For macOS users:** make sure `pip3` is installed. You can install it via Homebrew:
     
+    ```bash
+    brew install python3
+    ```
+    
+    Then install the required packages:
+    ```bash
+    pip3 install -r requirements.txt
+    ```
+    **For other systems:**
     ```bash
     pip install -r requirements.txt
     ```
