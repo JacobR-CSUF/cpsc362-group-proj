@@ -1,0 +1,103 @@
+name: Deploy to Production Server via Tailscale
+
+on:
+  push:
+    branches:
+      - main  # Triggers on merge to main
+
+jobs:
+  deploy:
+    name: Deploy Application
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Connect to Tailscale VPN
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          version: 1.56.1  # Use stable version
+
+      - name: Wait for Tailscale connection
+        run: |
+          echo "Waiting for Tailscale to establish connection..."
+          sleep 5
+          tailscale status
+          echo "Connected to Tailscale network!"
+
+      - name: Test connectivity to server
+        run: |
+          echo "Testing connection to ${{ secrets.SERVER_HOST }}..."
+          ping -c 3 ${{ secrets.SERVER_HOST }}
+
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          timeout: 300s
+          script: |
+            echo "Starting deployment..."
+
+            # Navigate to project directory
+            cd ~/cpsc362-group-proj
+
+            # Show current status
+            echo "Current git status:"
+            git status
+
+            # Fetch latest changes from main
+            echo "Fetching latest changes..."
+            git fetch origin main
+
+            # Reset to match remote main exactly
+            echo "Resetting to origin/main..."
+            git reset --hard origin/main
+
+            # Show what changed
+            echo "Latest commit:"
+            git log -1 --oneline
+
+            # Pull latest Docker images
+            echo "Pulling Docker images..."
+            docker-compose pull
+
+            # Stop current services
+            echo "Stopping services..."
+            docker-compose down
+
+            # Start services with rebuild
+            echo "Starting services..."
+            docker-compose up -d --build
+
+            # Wait for services to start
+            echo "Waiting for services to initialize..."
+            sleep 10
+
+            # Show running containers
+            echo "Running containers:"
+            docker-compose ps
+
+            # Clean up old images
+            echo "Cleaning up old Docker images..."
+            docker image prune -af
+
+            echo "✅ Deployment complete!"
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ Deployment successful!"
+            echo "Server: ${{ secrets.SERVER_HOST }}"
+            echo "User: ${{ secrets.SERVER_USER }}"
+          else
+            echo "❌ Deployment failed!"
+            echo "Check logs above for details."
+          fi
