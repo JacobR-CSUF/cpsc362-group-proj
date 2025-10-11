@@ -1,9 +1,10 @@
 from minio import Minio
 from minio.error import S3Error
 import os
-from typing import Optional
 
 class MinIOService:
+
+    
     def __init__(self):
         self.client = Minio(
             os.getenv("MINIO_ENDPOINT", "localhost:9000"),
@@ -32,4 +33,4 @@ class MinIOService:
             )
             return f"http://localhost:9000/{self.bucket_name}/{object_name}"
         except S3Error as e:
-            raise Exception(f"Failed to upload file: {e}")
+            raise Exception(f"Failed to upload file: {e}\n")
