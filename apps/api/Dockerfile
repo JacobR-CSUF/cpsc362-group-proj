@@ -23,5 +23,4 @@ EXPOSE 8001
 
 ENV PYTHONPATH=/app
 # execute FastAPI (keep '--reload' in development environment)
-CMD ["python", "-m", "uvicorn", "apps.api.app.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
-
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
