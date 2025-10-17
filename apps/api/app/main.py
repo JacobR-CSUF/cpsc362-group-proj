@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from apps.api.routes import users, auth # API list to develop 
+from app.routers import users, auth  # API list to develop 
 
 app = FastAPI(title="CPSC Social Media", version="1.0")
 
