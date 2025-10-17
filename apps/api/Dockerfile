@@ -18,7 +18,7 @@ RUN pip install --upgrade pip && \
 # copy the application code
 COPY . .
 
-# set defualt port
+# set default port
 EXPOSE 8001
 
 ENV PYTHONPATH=/app
