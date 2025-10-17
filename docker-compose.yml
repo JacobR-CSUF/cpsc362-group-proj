@@ -224,8 +224,7 @@ services:
       - meta
     networks:
       - app-network
-      
-  api:
+  api: # add api service
     build:
       context: ./apps/api       
       dockerfile: Dockerfile
