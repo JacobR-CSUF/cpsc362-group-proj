@@ -6,8 +6,8 @@ services:
     image: minio/minio:latest
     container_name: minio
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "0.0.0.0:9000:9000"
+      - "0.0.0.0:9001:9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin123
@@ -41,8 +41,8 @@ services:
     image: kong:2.8.1
     container_name: supabase-kong
     ports:
-      - "8000:8000"
-      - "8443:8443"
+      - "0.0.0.0:8000:8000"
+      - "0.0.0.0:8443:8443"
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
@@ -207,7 +207,7 @@ services:
     image: supabase/studio:latest
     container_name: supabase-studio
     ports:
-      - "3100:3000"
+      - "0.0.0.0:3100:3000"
     environment:
       STUDIO_PG_META_URL: http://meta:8080
       POSTGRES_PASSWORD: your-super-secret-password
