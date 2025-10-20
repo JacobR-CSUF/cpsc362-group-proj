@@ -204,7 +204,7 @@ services:
       - app-network
 
   studio:
-    image: supabase/studio:latest
+    image: supabase/studio:2025.09.23-sha-081a753
     container_name: supabase-studio
     ports:
       - "0.0.0.0:3100:3000"
