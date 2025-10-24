@@ -40,7 +40,7 @@ Table friend_suggestions {
   id uuid [primary key, default: `uuid_generate_v4()`]
   user_id uuid [not null, note: 'The user receiving the suggestion']
   suggested_user_id uuid [not null, note: 'The potential friend']
-  match_score float [note: '0–1 confidence of friendship likelihood']
+  match_score float [note: '0-1 confidence of friendship likelihood']
   reason varchar [note: 'e.g., Nearby, mutual follows, shared interests']
   created_at timestamp [default: `now()`]
 }

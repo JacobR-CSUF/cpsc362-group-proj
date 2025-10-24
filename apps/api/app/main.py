@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 # CORRECTED IMPORTS - Use relative imports since we're inside app/
 from .routers import users
+from .routers import health
 from .services.supabase_client import SupabaseClient
 
 # Load environment variables
@@ -111,6 +112,7 @@ async def health_check():
 
 # Register routers
 app.include_router(users.router, prefix="/api/v1")
+app.include_router(health.router)
 
 
 # Additional route registration examples (for future implementation)
