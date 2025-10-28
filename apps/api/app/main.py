@@ -1,23 +1,23 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from apps.api.app.routers import health, auth # users, auth  # API list to develop 
+from app.routers import auth, health  # include both routers
 
 app = FastAPI(title="CPSC Social Media", version="1.0")
 
-# set CORS
+# CORS settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # frontend domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/health") # check the server status
+# Simple health check endpoint
+@app.get("/health")
 async def health_check():
     return {"status": "ok"}
 
-# Register router of each API (will be revised)
+# Register routers
 app.include_router(health.router, prefix="/api")
-# app.include_router(users.router)
-app.include_router(auth.router,prefix="/api")
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
