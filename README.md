@@ -6,108 +6,394 @@ Group assignment that takes the Social Media subject for our project.
 
 ## Table of Contents
 - [Project Description](#project-description)
+- [Quick Start](#quick-start)
+- [API Documentation](#api-documentation)
 - [Installation Instructions](#installation-instructions)
-- [Diagram / Visual Explanation](#diagram--visual-explanation)
-- [Known Issues](#known-issues)
-- [To-Do Items](#to-do-items)
+- [Security Setup](#security-setup)
+- [Development Tools](#development-tools)
 
 ---
 
 ## Project Description
 
-Our team has been tasked with integrating **AI-based features** into an existing large-scale social media platform.  
-The goal is to enhance user engagement and experience through intelligent features such as:
-- AI-generated captions for photos/videos  
-- Smart content recommendations  
-- Automated moderation and safety filters  
-- Personalized feed ranking  
+A social media platform backend API with user management, authentication, and AI-powered features. Built with FastAPI, Supabase, and PostgreSQL with Row-Level Security.
 
-This project will:
-- Define our **software development philosophy**  
-- Establish a **custom software development framework** aligned with the core team's release cycle  
-- Prototype, develop, and deploy new **AI-powered features**  
-- Maintain long-term compatibility with the existing infrastructure  
+**Core Features:**
+- User management (CRUD operations)
+- JWT authentication
+- Row-level security (RLS)
+- Database seeding tools
+- Comprehensive API documentation
+
+---
+
+## Quick Start
+
+```bash
+# 1. Clone and setup
+git clone <repository>
+cd cpsc362-group-proj
+python -m venv venv
+source venv/bin/activate  # Mac/Linux
+venv\Scripts\activate     # Windows
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Start services
+docker-compose up -d
+
+# 4. Run API
+cd apps/api
+uvicorn app.main:app --reload --port 8989
+
+# 5. Access API
+# Docs: http://localhost:8989/docs
+# API: http://localhost:8989
+```
+
+---
+
+## API Documentation
+
+### 📚 Complete Implementation Guide
+**[IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md)** - Comprehensive technical documentation
+
+### 🚀 API Endpoints
+
+**Base URL:** `http://localhost:8989`
+
+**Health Check:**
+```bash
+curl http://localhost:8989/health
+```
+
+**User Endpoints:**
+```bash
+# Get public profile (no auth)
+curl http://localhost:8989/api/v1/users/<user-id>
+
+# Get own profile (auth required)
+curl -H "Authorization: Bearer <token>" \
+     http://localhost:8989/api/v1/users/me
+
+# Update profile (auth required)
+curl -X PUT \
+     -H "Authorization: Bearer <token>" \
+     -H "Content-Type: application/json" \
+     -d '{"username": "new_name"}' \
+     http://localhost:8989/api/v1/users/me
+
+# Delete account (auth required)
+curl -X DELETE \
+     -H "Authorization: Bearer <token>" \
+     http://localhost:8989/api/v1/users/me
+```
+
+**Interactive Documentation:**
+- Swagger UI: http://localhost:8989/docs
+- ReDoc: http://localhost:8989/redoc
 
 ---
 
 ## Installation Instructions
 
-> For Developers
+### Prerequisites
+- Python 3.9+
+- Docker & Docker Compose
+- Git
 
-1. Create and activate a virtual environment:
-    
+### For Developers
+
+1. **Setup virtual environment:**
     ```bash
     python -m venv venv
-    source venv/bin/activate  # for Mac/Linux
-    venv\Scripts\activate     # for Windows
-    docker-compose up -d # in your root repo directory
+    source venv/bin/activate  # Mac/Linux
+    venv\Scripts\activate     # Windows
     ```
     
-2. Install dependencies:
-    **For macOS users:** make sure `pip3` is installed. You can install it via Homebrew:
-    
-    ```bash
-    brew install python3
-    ```
-    
-    Then install the required packages:
-    ```bash
-    pip3 install -r requirements.txt
-    ```
-    **For other systems:**
+2. **Install dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
     
-3. Access Backend (Supabase & MinIO):
-
-    **MinIO**  
-    Login at: [http://localhost:9001/](http://localhost:9001/)  
-    Username: `minioadmin`  
-    Password: `minioadmin123`
+3. **Configure environment:**
+    ```bash
+    cp .env.example .env
+    # Edit .env with your Supabase credentials
+    ```
     
-    **Supabase**  
-    Login at: [http://localhost:3100/](http://localhost:3100/)  
-    No credentials required
+4. **Start services:**
+    ```bash
+    docker-compose up -d
+    ```
+    
+5. **Initialize database:**
+    ```bash
+    # Apply RLS policies
+    # Open http://localhost:3100 (Supabase)
+    # Copy scripts/sql/rls_rules.sql to SQL Editor
+    # Run the SQL
+    
+    # Seed test data
+    python scripts/seed_database.py
+    ```
+    
+6. **Run API server:**
+    ```bash
+    cd apps/api
+    uvicorn app.main:app --reload --port 8989
+    ```
 
-> 💡 **For Non-developers (Users)**  
-> 
-> - The application will be available at [**https://app.yourdomain.com**](https://app.yourdomain.com/).  
-> - Log in using your existing social media credentials.  
-> - Access **AI Feed**, **Smart Caption**, and **Auto Edit** features from the main dashboard.
+### Access Points
+
+**API Server:**
+- API: http://localhost:8989
+- Docs: http://localhost:8989/docs
+
+**Backend Services:**
+- Supabase: http://localhost:3100
+- MinIO: http://localhost:9001 (minioadmin/minioadmin123)
 
 ---
 
-## Diagram / Visual Explanation
+## Security Setup
 
-> Below is a conceptual flow of the AI feature integration.
+### 🔐 Row Level Security (RLS)
 
-[ User Uploads Photo/Video ]
-↓
-[ AI Caption Generator ]
-↓
-[ AI Moderation Filter ]
-↓
-[ Personalized Feed Recommendation ]
-↓
-[ Display in App Feed ]
+Complete database-level security ensuring users can only access authorized data.
 
-*(You can replace this with an image or demo video later.)*
+**Quick Setup:**
+1. Open Supabase SQL Editor: http://localhost:3100
+2. Copy `scripts/sql/rls_rules.sql`
+3. Execute in SQL Editor
+
+**Features:**
+- ✅ Users can only edit their own data
+- ✅ Post visibility controls (public/followers/private)
+- ✅ Private messaging
+- ✅ Protected friend suggestions
+- ✅ Can't interact with invisible posts
+
+**Testing:**
+```bash
+python scripts/test_rls.py
+```
+
+### 🔑 JWT Authentication
+
+**Generate test tokens:**
+```bash
+python scripts/generate_test_token.py
+```
+
+**Use in requests:**
+```bash
+export TOKEN="<your-jwt-token>"
+curl -H "Authorization: Bearer $TOKEN" \
+     http://localhost:8989/api/v1/users/me
+```
 
 ---
 
-## Known Issues
+## Development Tools
 
-- AI caption generator may occasionally produce irrelevant or inaccurate text 
-- Image moderation latency increases under heavy load 
-- Limited GPU resources in the staging environment
+### Database Seeding
+```bash
+python scripts/seed_database.py
 
+# Options:
+# 1. Seed 5 hardcoded test users
+# 2. Seed 20 realistic users (Faker)
+# 3. Seed EVERYTHING (users, media, posts, follows, likes)
+# 4. Clear all test data
+```
 
-## To-Do Items
+### Token Generator
+```bash
+python scripts/generate_test_token.py
 
-- [ ] Finalize feature backlog and sprint plan  
-- [ ] Implement initial AI ca
-- [ ] Integrate recommendation model with feed service  
-- [ ] Conduct user testing and collect feedback  
-- [ ] Align deployment cycle with core development team  
-- [ ] Write unit and integration tests  
+# Generate tokens for:
+# - Manual user entry
+# - Existing database users
+# - Decode existing tokens
+```
+
+### RLS Testing
+```bash
+python scripts/test_rls.py
+```
+
+---
+
+## Project Structure
+
+```
+apps/api/
+├── app/
+│   ├── main.py              # FastAPI application
+│   ├── dependencies.py      # Auth middleware
+│   ├── routers/
+│   │   └── users.py        # User CRUD endpoints
+│   └── services/
+│       └── supabase_client.py  # Database client
+
+scripts/
+├── sql/
+│   ├── initial_schema.sql   # Database schema
+│   └── rls_rules.sql        # RLS policies ⭐
+├── seed_database.py         # Test data generator
+├── generate_test_token.py   # JWT token generator
+└── test_rls.py             # RLS testing
+
+docs/
+├── IMPLEMENTATION_SUMMARY.md    # Complete guide ⭐
+├── API_QUICK_REFERENCE.md       # API reference
+└── SETUP.md                     # Setup guide
+```
+
+---
+
+## Technology Stack
+
+**Backend:**
+- FastAPI 0.115.0
+- Uvicorn 0.30.6
+- Pydantic 2.9.2
+
+**Database:**
+- Supabase 2.6.0
+- PostgreSQL with RLS
+
+**Authentication:**
+- PyJWT 2.8.0
+- python-jose 3.3.0
+
+**Development:**
+- Faker 37.11.0
+- python-dotenv 1.0.1
+
+---
+
+## API Features
+
+### Implemented ✅
+- User registration (via seeding)
+- User authentication (JWT)
+- Get user profile (public/private)
+- Update user profile
+- Delete user account
+- Row-level security
+- Health checks
+- API documentation
+
+### Planned 🚧
+- Posts CRUD
+- Comments system
+- Likes functionality
+- Follow/unfollow
+- Private messaging
+- Media upload
+- Friend suggestions
+- Real-time updates
+
+---
+
+## Testing
+
+### Manual Testing
+```bash
+# 1. Generate token
+python scripts/generate_test_token.py
+
+# 2. Test endpoints
+export TOKEN="<generated-token>"
+
+# Get profile
+curl -H "Authorization: Bearer $TOKEN" \
+     http://localhost:8989/api/v1/users/me
+
+# Update profile
+curl -X PUT \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"username": "new_name"}' \
+     http://localhost:8989/api/v1/users/me
+```
+
+### Interactive Testing
+Open http://localhost:8989/docs for Swagger UI with built-in testing.
+
+---
+
+## Environment Configuration
+
+Required environment variables in `.env`:
+
+```env
+# Supabase
+SUPABASE_URL=http://localhost:8000
+SUPABASE_SERVICE_ROLE_KEY=<your-service-key>
+SUPABASE_ANON_KEY=<your-anon-key>
+
+# JWT
+JWT_SECRET=super-secret-jwt-token-with-at-least-32-characters-long
+
+# API
+API_PORT=8989
+DEBUG=True
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**"Missing environment variables"**
+- Create `.env` file from `.env.example`
+- Verify all required variables are set
+
+**"Token has expired"**
+- Generate new token: `python scripts/generate_test_token.py`
+
+**"User not found"**
+- Run seed script: `python scripts/seed_database.py`
+
+**"Port already in use"**
+- Change `API_PORT` in `.env`
+- Or kill process on port 8989
+
+**"Database connection failed"**
+- Start Supabase: `docker-compose up -d`
+- Verify `SUPABASE_URL` is correct
+
+---
+
+## Documentation
+
+- **[Complete Implementation Guide](docs/IMPLEMENTATION_SUMMARY.md)** - Everything you need
+- **[API Quick Reference](docs/API_QUICK_REFERENCE.md)** - Quick API usage
+- **[API Docs](http://localhost:8989/docs)** - Interactive Swagger UI
+
+---
+
+## Contributing
+
+See [IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) for:
+- Code style guidelines
+- Commit message format
+- Testing requirements
+- Development workflow
+
+---
+
+## License
+
+[Project License Information]
+
+---
+
+**Version:** 1.0.0  
+**Status:** ✅ Production Ready (User Management)  
+**Last Updated:** October 2024
