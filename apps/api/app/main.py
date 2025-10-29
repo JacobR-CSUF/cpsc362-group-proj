@@ -8,34 +8,28 @@ from fastapi.responses import JSONResponse
 import os
 from dotenv import load_dotenv
 
-# CORRECTED IMPORTS - Use relative imports since we're inside app/
-from .routers import users
-from .routers import health
+from .routers import auth, users, health
 from .services.supabase_client import SupabaseClient
 
-# Load environment variables
 load_dotenv()
 
-# Create FastAPI app
 app = FastAPI(
-    title="Social Media Backend API",
-    description="Backend API for social media platform with user management, posts, and interactions",
+    title="CPSC Social Media API",
+    description="Social media platform backend with AI-powered features",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update this in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# Startup event
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on application startup"""
@@ -43,7 +37,6 @@ async def startup_event():
     print("  Starting Social Media Backend API")
     print("="*60 + "\n")
     
-    # Test Supabase connection
     print("Testing Supabase connection...")
     health = await SupabaseClient.health_check()
     
@@ -58,14 +51,12 @@ async def startup_event():
     print("\n" + "="*60 + "\n")
 
 
-# Shutdown event
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on application shutdown"""
     print("\n👋 Shutting down API...")
 
 
-# Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Handle uncaught exceptions"""
@@ -79,12 +70,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Health check endpoint
 @app.get("/", tags=["health"])
 async def root():
     """Root endpoint"""
     return {
-        "message": "Social Media Backend API",
+        "message": "CPSC Social Media API",
         "status": "running",
         "version": "1.0.0"
     }
@@ -113,12 +103,7 @@ async def health_check():
 # Register routers
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(health.router)
-
-
-# Additional route registration examples (for future implementation)
-# from .routers import posts, comments, likes, follows
-# app.include_router(posts.router, prefix="/api/v1")
-# app.include_router(comments.router, prefix="/api/v1")
+app.include_router(auth.router)
 
 
 if __name__ == "__main__":
@@ -128,7 +113,7 @@ if __name__ == "__main__":
     debug = os.getenv("DEBUG", "True") == "True"
     
     uvicorn.run(
-        "app.main:app",  # Changed from "apps.api.app.main:app"
+        "app.main:app",
         host="0.0.0.0",
         port=port,
         reload=debug,
