@@ -271,7 +271,7 @@ python scripts/seed_database.py --verbose
 
 #### Method 1: Swagger UI
 
-1. Start API: `uvicorn app.main:app --reload --port 8989`
+1. Start API: `python -m uvicorn apps.api.app.main:app --reload --port 8989`
 2. Open: http://localhost:8989/docs
 3. Test endpoints interactively
 
@@ -579,13 +579,13 @@ docker-compose up -d
 
 # 4. Run API
 cd apps/api
-uvicorn app.main:app --reload --port 8989
+python -m uvicorn apps.api.app.main:app --reload --port 8989
 ```
 
 ### Production
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8989 --workers 4
+python -m uvicorn apps.api.app.main:app --reload --port 8989
 ```
 
 ---
