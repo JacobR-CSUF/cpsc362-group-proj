@@ -1,1 +1,30 @@
+<<<<<<< HEAD
 *.env*
+=======
+# Environment variables
+.env
+.env.local
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Logs
+*.log
+>>>>>>> c2c4a2f2758568d34f88abaaf0a45d06117477a2

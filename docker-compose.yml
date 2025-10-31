@@ -56,7 +56,7 @@ services:
       - app-network
 
   auth:
-    image: supabase/gotrue:v2.179.0 #updated to (10/02/2025)
+    image: supabase/gotrue:v2.179.0
     container_name: supabase-auth
     ports:
       - "9999:9999"
@@ -99,82 +99,57 @@ services:
     ports:
       - "4000:4000"
     environment:
-      # Add this required variable
       APP_NAME: realtime
-
-      # Database connection
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: postgres
       DB_USER: postgres
       DB_PASSWORD: your-super-secret-password
       DB_SSL: "false"
-
-      # JWT configuration
       JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
-
-      # Realtime specific settings
       REPLICATION_MODE: RLS
       REPLICATION_POLL_INTERVAL: 100
       SECURE_CHANNELS: "true"
       SLOT_NAME: supabase_realtime_rls
       TEMPORARY_SLOT: "true"
-
-      # Server configuration
       PORT: 4000
       DNS_NODES: "''"
       ENABLE_TAILSCALE: "false"
-
-      # Additional required variables
       API_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
       DB_ENCRYPED_PASSWORD: your-super-secret-password
       FLY_APP_NAME: realtime
       FLY_ALLOC_ID: fly123
       SECRET_KEY_BASE: your-secret-key-base-with-at-least-64-characters-long
-
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - app-network
 
-  
   storage:
     image: supabase/storage-api:v0.43.11
     container_name: supabase-storage
     ports:
       - "5555:5000"
     environment:
-      # Authentication keys
       ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
       SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
       SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
       TENANT_ID: stub
-
-      # Database connection
       POSTGREST_URL: http://rest:3000
       DATABASE_URL: postgres://postgres:your-super-secret-password@postgres:5432/postgres
       PGOPTIONS: -c search_path=storage,public
-
-      # JWT configuration
       JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
       PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
-
-      # File size limits
       FILE_SIZE_LIMIT: 52428800
       IS_MULTITENANT: "false"
-
-      # MinIO S3 Configuration
       STORAGE_BACKEND: s3
       GLOBAL_S3_BUCKET: supabase-storage
       REGION: us-east-1
       GLOBAL_S3_ENDPOINT: http://minio:9000
       GLOBAL_S3_FORCE_PATH_STYLE: "true"
-
-      # AWS Credentials
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin123
-
     depends_on:
       postgres:
         condition: service_healthy
@@ -217,14 +192,14 @@ services:
       SUPABASE_PUBLIC_URL: http://localhost:8000
       SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
       SUPABASE_SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
-
     depends_on:
       - postgres
       - kong
       - meta
     networks:
       - app-network
-  api: # add api service
+
+  api:
     build:
       context: ./apps/api       
       dockerfile: Dockerfile
@@ -234,13 +209,16 @@ services:
     env_file:
       - .env
     environment:
-      - PYTHONPATH=/app
-      - SUPABASE_URL=http://kong:8000
+      - POSTGREST_URL=http://100.92.51.75:3001
+      - SUPABASE_URL=http://100.92.51.75:8000
+      - SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
+      - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      - JWT_SECRET=super-secret-jwt-token-with-at-least-32-characters-long
+      - API_PORT=8001
+      - DEBUG=True
     volumes:
       - ./apps/api:/app          
-    command: >
-      python -m uvicorn app.main:app
-      --host 0.0.0.0 --port 8001 --reload
+    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
     depends_on:
       postgres:
         condition: service_healthy
