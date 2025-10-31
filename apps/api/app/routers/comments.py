@@ -200,6 +200,12 @@ async def get_post_comments(
     page: int = Query(1, ge=1, description="Page number (starts at 1)"),
     page_size: int = Query(50, ge=1, le=100, description="Number of comments per page")
 ):
+    """
+    Get all comments for a post (paginated, ordered chronologically)
+    
+    Public endpoint - no authentication required
+    Comments are ordered by created_at ASC (oldest first)
+    """
     try:
         try:
             UUID(post_id)
