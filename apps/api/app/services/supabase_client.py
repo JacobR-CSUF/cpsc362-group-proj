@@ -2,13 +2,20 @@
 Supabase Client Module
 Provides a singleton Supabase client for database and auth operations.
 """
-import os
+import os, sys
 from typing import Optional
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from pathlib import PureWindowsPath
+from pathlib import Path
 
-# Load environment variables
-load_dotenv()
+# Load environment variables - go up to the apps/api level
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Load environment variables from apps/api/.env
+dotenv_path = project_root / ".env" 
+load_dotenv(dotenv_path)
 
 
 class SupabaseClient:

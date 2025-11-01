@@ -8,7 +8,8 @@ from fastapi.responses import JSONResponse
 import os
 from dotenv import load_dotenv
 
-from .routers import auth, users, health
+# CORRECTED IMPORTS - Use relative imports since we're inside app/
+from .routers import auth, users, health, comments
 from .services.supabase_client import SupabaseClient
 
 load_dotenv()
@@ -102,6 +103,7 @@ async def health_check():
 
 # Register routers
 app.include_router(users.router, prefix="/api/v1")
+app.include_router(comments.router, prefix="/api/v1")
 app.include_router(health.router)
 app.include_router(auth.router)
 
