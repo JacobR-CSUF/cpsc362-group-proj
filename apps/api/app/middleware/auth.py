@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 
-SECRET_KEY = "your-secret-key-change-this-in-production"
+SECRET_KEY = "super-secret-jwt-token-with-at-least-32-characters-long"
 ALGORITHM = "HS256"
 
 security = HTTPBearer()
@@ -17,7 +17,7 @@ def verify_token(token: str):
     except jwt.JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
     
-    async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Dependency for protected routes - extracts and validates user from token"""
     token = credentials.credentials
     payload = verify_token(token)
