@@ -118,7 +118,7 @@ def main():
             print(f"\nToken: {token}\n")
             print("Use this token in your API requests:")
             print(f"\ncurl -H 'Authorization: Bearer {token}' \\")
-            print("     http://localhost:8989/api/v1/users/me")
+            print("     http://localhost:8001/api/v1/users/me")
             print("\n" + "="*60 + "\n")
             
             # Decode and display
@@ -190,7 +190,7 @@ def main():
         print("\nExample usage:")
         print("\nexport TOKEN='<token_above>'")
         print("curl -H 'Authorization: Bearer $TOKEN' \\")
-        print("     http://localhost:8989/api/v1/users/me\n")
+        print("     http://localhost:8001/api/v1/users/me\n")
         
         # Save to file option
         save = input("Save tokens to file? (y/n): ").strip().lower()
