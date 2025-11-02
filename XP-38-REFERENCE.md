@@ -39,7 +39,7 @@ These files are superseded by this reference:
 
 ### Base URL
 ```
-http://localhost:8989/api/v1/comments
+http://localhost:8001/api/v1/comments
 ```
 
 ### Endpoints
@@ -130,11 +130,7 @@ ALTER TABLE comments ADD COLUMN deleted_at TIMESTAMP DEFAULT NULL;
 ### Interactive Test Script
 
 ```bash
-# Start API first
-cd apps/api
-uvicorn app.main:app --reload --port 8989
-
-# In another terminal, run test script
+# Run test script
 python scripts/test_comments_api.py
 
 # Or with pre-configured token/post_id
@@ -168,7 +164,7 @@ Other:
 
 ### 1. Create Comment
 ```bash
-curl -X POST "http://localhost:8989/api/v1/comments/posts/{post_id}/comments" \
+curl -X POST "http://localhost:8001/api/v1/comments/posts/{post_id}/comments" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"content": "Great post!"}'
@@ -196,7 +192,7 @@ curl -X POST "http://localhost:8989/api/v1/comments/posts/{post_id}/comments" \
 
 ### 2. Get Comments (Public)
 ```bash
-curl "http://localhost:8989/api/v1/comments/posts/{post_id}/comments?page=1&page_size=50"
+curl "http://localhost:8001/api/v1/comments/posts/{post_id}/comments?page=1&page_size=50"
 ```
 
 **Response (200):**
@@ -226,7 +222,7 @@ curl "http://localhost:8989/api/v1/comments/posts/{post_id}/comments?page=1&page
 
 ### 3. Update Comment
 ```bash
-curl -X PUT "http://localhost:8989/api/v1/comments/{comment_id}" \
+curl -X PUT "http://localhost:8001/api/v1/comments/{comment_id}" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"content": "Updated comment text"}'
@@ -250,7 +246,7 @@ curl -X PUT "http://localhost:8989/api/v1/comments/{comment_id}" \
 
 ### 4. Delete Comment (Soft Delete)
 ```bash
-curl -X DELETE "http://localhost:8989/api/v1/comments/{comment_id}" \
+curl -X DELETE "http://localhost:8001/api/v1/comments/{comment_id}" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
@@ -291,16 +287,10 @@ psql -U postgres -d your_db -f scripts/sql/initial_schema\ -\ postgres.sql
 psql -U postgres -d your_db -f scripts/sql/alter_comments_add_timestamps.sql
 ```
 
-### 2. Start API
-```bash
-cd apps/api
-uvicorn app.main:app --reload --port 8989
-```
+### 2. Verify
+Visit: http://localhost:8001/docs
 
-### 3. Verify
-Visit: http://localhost:8989/docs
-
-### 4. Test
+### 3. Test
 ```bash
 python scripts/test_comments_api.py
 ```
