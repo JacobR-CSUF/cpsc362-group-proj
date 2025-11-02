@@ -43,13 +43,9 @@ pip install -r requirements.txt
 # 3. Start services
 docker-compose up -d
 
-# 4. Run API
-cd apps/api
-uvicorn app.main:app --reload --port 8989
-
-# 5. Access API
-# Docs: http://localhost:8989/docs
-# API: http://localhost:8989
+# 4. Access API
+# Docs: http://localhost:8001/docs
+# API: http://localhost:8001
 ```
 
 ---
@@ -61,38 +57,38 @@ uvicorn app.main:app --reload --port 8989
 
 ### 🚀 API Endpoints
 
-**Base URL:** `http://localhost:8989`
+**Base URL:** `http://localhost:8001`
 
 **Health Check:**
 ```bash
-curl http://localhost:8989/health
+curl http://localhost:8001/health
 ```
 
 **User Endpoints:**
 ```bash
 # Get public profile (no auth)
-curl http://localhost:8989/api/v1/users/<user-id>
+curl http://localhost:8001/api/v1/users/<user-id>
 
 # Get own profile (auth required)
 curl -H "Authorization: Bearer <token>" \
-     http://localhost:8989/api/v1/users/me
+     http://localhost:8001/api/v1/users/me
 
 # Update profile (auth required)
 curl -X PUT \
      -H "Authorization: Bearer <token>" \
      -H "Content-Type: application/json" \
      -d '{"username": "new_name"}' \
-     http://localhost:8989/api/v1/users/me
+     http://localhost:8001/api/v1/users/me
 
 # Delete account (auth required)
 curl -X DELETE \
      -H "Authorization: Bearer <token>" \
-     http://localhost:8989/api/v1/users/me
+     http://localhost:8001/api/v1/users/me
 ```
 
 **Interactive Documentation:**
-- Swagger UI: http://localhost:8989/docs
-- ReDoc: http://localhost:8989/redoc
+- Swagger UI: http://localhost:8001/docs
+- ReDoc: http://localhost:8001/redoc
 
 ---
 
@@ -138,18 +134,13 @@ curl -X DELETE \
     # Seed test data
     python scripts/seed_database.py
     ```
-    
-6. **Run API server:**
-    ```bash
-    cd apps/api
-    uvicorn app.main:app --reload --port 8989
-    ```
+
 
 ### Access Points
 
 **API Server:**
-- API: http://localhost:8989
-- Docs: http://localhost:8989/docs
+- API: http://localhost:8001
+- Docs: http://localhost:8001/docs
 
 **Backend Services:**
 - Supabase: http://localhost:3100
@@ -191,7 +182,7 @@ python scripts/generate_test_token.py
 ```bash
 export TOKEN="<your-jwt-token>"
 curl -H "Authorization: Bearer $TOKEN" \
-     http://localhost:8989/api/v1/users/me
+     http://localhost:8001/api/v1/users/me
 ```
 
 ---
@@ -311,18 +302,18 @@ export TOKEN="<generated-token>"
 
 # Get profile
 curl -H "Authorization: Bearer $TOKEN" \
-     http://localhost:8989/api/v1/users/me
+     http://localhost:8001/api/v1/users/me
 
 # Update profile
 curl -X PUT \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"username": "new_name"}' \
-     http://localhost:8989/api/v1/users/me
+     http://localhost:8001/api/v1/users/me
 ```
 
 ### Interactive Testing
-Open http://localhost:8989/docs for Swagger UI with built-in testing.
+Open http://localhost:8001/docs for Swagger UI with built-in testing.
 
 ---
 
@@ -340,7 +331,7 @@ SUPABASE_ANON_KEY=<your-anon-key>
 JWT_SECRET=super-secret-jwt-token-with-at-least-32-characters-long
 
 # API
-API_PORT=8989
+API_PORT=8001
 DEBUG=True
 ```
 
@@ -362,7 +353,7 @@ DEBUG=True
 
 **"Port already in use"**
 - Change `API_PORT` in `.env`
-- Or kill process on port 8989
+- Or kill process on port 8001
 
 **"Database connection failed"**
 - Start Supabase: `docker-compose up -d`
@@ -374,7 +365,7 @@ DEBUG=True
 
 - **[Complete Implementation Guide](docs/IMPLEMENTATION_SUMMARY.md)** - Everything you need
 - **[API Quick Reference](docs/API_QUICK_REFERENCE.md)** - Quick API usage
-- **[API Docs](http://localhost:8989/docs)** - Interactive Swagger UI
+- **[API Docs](http://localhost:8001/docs)** - Interactive Swagger UI
 
 ---
 
