@@ -189,8 +189,8 @@ async def main():
     if env_ok and supabase_ok and endpoints_ok:
         print("\n🎉 All tests passed! You're ready to go!")
         print("\nNext steps:")
-        print("1. Start your FastAPI server: python -m uvicorn apps.api.app.main:app --reload --port 8989")
-        print("2. Visit http://localhost:8989/docs for API documentation")
+        print("1. Start your FastAPI server: python -m uvicorn apps.api.app.main:app --reload --port 8001")
+        print("2. Visit http://localhost:8001/docs for API documentation")
         print("3. Test endpoints using the Swagger UI")
     else:
         print("\n⚠️  Some tests failed. Please review the errors above.")

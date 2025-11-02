@@ -10,7 +10,7 @@ from typing import Optional
 from datetime import datetime
 from pathlib import Path
 
-API_BASE_URL = "http://localhost:8989/api/v1"
+API_BASE_URL = "http://localhost:8001/api/v1"
 COMMENTS_BASE = f"{API_BASE_URL}/comments"
 
 class TestSession:
