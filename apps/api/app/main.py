@@ -9,6 +9,7 @@ import os
 from dotenv import load_dotenv
 
 from .routers import auth, users, health
+from apps.api.routes import posts
 from .services.supabase_client import SupabaseClient
 
 load_dotenv()
