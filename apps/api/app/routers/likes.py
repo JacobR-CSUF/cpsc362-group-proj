@@ -79,22 +79,19 @@ def get_like_status(
 
 @router.get("/posts/{post_id}/likes/users", response_model=LikedUsersResponse)
 def list_liked_users(
-    post_id: UUID4 = Path(...),
+    post_id: UUID4,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
     client = get_supabase_client()
     _ensure_post_exists(client, str(post_id))
 
-    # total sum
     total_resp = client.table("likes").select("id", count="exact").eq("post_id", str(post_id)).execute()
     total = int(total_resp.count or 0)
 
-    # join user list (users_profile)
-    # PostgREST embed: select("user_id, created_at, users_profile(username,avatar_url)")
     resp = (
         client.table("likes")
-        .select("user_id, created_at, users_profile!inner(username,avatar_url)")
+        .select("user_id, created_at, users!inner(username,profile_pic)")
         .eq("post_id", str(post_id))
         .order("created_at", desc=True)
         .range(offset, offset + limit - 1)
@@ -103,12 +100,12 @@ def list_liked_users(
 
     users: list[LikedUser] = []
     for row in resp.data or []:
-        prof = row.get("users_profile") or {}
+        prof = row.get("users") or {}
         users.append(
             LikedUser(
                 user_id=row["user_id"],
                 username=prof.get("username"),
-                avatar_url=prof.get("avatar_url"),
+                profile_pic=prof.get("profile_pic"),
                 liked_at=row["created_at"],
             )
         )
