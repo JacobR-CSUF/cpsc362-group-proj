@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from pydantic import BaseModel, UUID4
-from apps.api.app.services.supabase_client import get_supabase_client
-from apps.api.app.dependencies import get_current_user 
+from ..services.supabase_client import get_supabase_client
+from ..dependencies import get_current_user
 
 router = APIRouter(prefix="/api/v1", tags=["likes"])
 
