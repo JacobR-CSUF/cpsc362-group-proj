@@ -8,9 +8,7 @@ from fastapi.responses import JSONResponse
 import os
 from dotenv import load_dotenv
 
-from .routers import auth, users, health
-from apps.api.app.routers import posts
-from apps.api.app.routers import likes
+from .routers import auth, users, health, posts, likes, comments
 from .services.supabase_client import SupabaseClient
 
 load_dotenv()
