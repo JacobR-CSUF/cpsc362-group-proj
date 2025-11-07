@@ -1,12 +1,11 @@
 # apps/api/routes/posts.py
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, AnyUrl
+from pydantic import BaseModel, Field, AnyUrl, UUID4
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import os
 import jwt
-from uuid import UUID 
 
 from ..services.supabase_client import get_supabase_client
 
@@ -267,7 +266,7 @@ def update_post(
     description="Deletes your own post. Associated comments/likes are removed via FK ON DELETE CASCADE.",
 )
 def delete_post(
-    post_id: UUID = Path(..., description="UUID of the post to delete"),
+    post_id: UUID4 = Path(..., description="UUID of the post to delete"),
     current: AuthUser = Depends(get_current_user),
 ):
     db = _rls_client(current.access_token)
