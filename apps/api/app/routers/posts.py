@@ -5,7 +5,8 @@ from pydantic import BaseModel, Field, AnyUrl
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import os
-import jwt 
+import jwt
+from uuid import UUID 
 
 from ..services.supabase_client import get_supabase_client
 
@@ -29,7 +30,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Security(bearer
 
     # token = authorization.split(" ", 1)[1].strip()
     token = credentials.credentials
-    secret = os.getenv("SUPABASE_JWT_SECRET") or os.getenv("JWT_SECRET")
+    secret = os.getenv("JWT_SECRET")
 
     try:
         if secret:
@@ -64,7 +65,7 @@ class PostUpdate(BaseModel):
 class AuthorInfo(BaseModel):
     user_id: str
     username: str
-    avatar_url: Optional[AnyUrl] = None
+    profile_pic: Optional[AnyUrl] = None
 
 
 class PostResponse(BaseModel):
@@ -85,7 +86,7 @@ def _iso_to_dt(value: str) -> datetime:
 
 
 def _row_to_post(row: Dict[str, Any]) -> PostResponse:
-    profile = row.get("users_profile") or {}
+    profile = row.get("users") or {}
     return PostResponse(
         id=row["id"],
         user_id=row["user_id"],
@@ -96,7 +97,7 @@ def _row_to_post(row: Dict[str, Any]) -> PostResponse:
         author=AuthorInfo(
             user_id=row["user_id"],
             username=profile.get("username", ""),
-            avatar_url=profile.get("avatar_url"),
+            profile_pic=profile.get("profile_pic"),
         ),
     )
 
@@ -104,14 +105,6 @@ def _row_to_post(row: Dict[str, Any]) -> PostResponse:
 def _rls_client(user_token: str):
     client = get_supabase_client()
     client.postgrest.auth(user_token)
-    try:
-        client.postgrest.postgrest_client.headers.update({
-            "Prefer": "return=representation",
-            "Authorization": f"Bearer {user_token}",
-            "apikey": os.getenv("SUPABASE_ANON_KEY", ""),
-        })
-    except Exception:
-        pass
     return client
 
 
@@ -138,7 +131,7 @@ def create_post(payload: PostCreate, current: AuthUser = Depends(get_current_use
     res = (
         db.table("posts")
         .insert(data)
-        .select("*, users_profile(username, avatar_url)")
+        .select("*, users(username, profile_pic)")
         .execute()
     )
     if getattr(res, "error", None):
@@ -163,7 +156,7 @@ def get_feed(
 
     res = (
         db.table("posts")
-        .select("*, users_profile(username, avatar_url)")
+        .select("*, users(username, profile_pic)")
         .order("created_at", desc=True)
         .range(start, end)
         .execute()
@@ -189,7 +182,7 @@ def get_post_by_id(
 
     res = (
         db.table("posts")
-        .select("*, users_profile(username, avatar_url)")
+        .select("*, users(username, profile_pic)")
         .eq("id", post_id)
         .single()
         .execute()
@@ -220,7 +213,7 @@ def get_posts_by_user(
 
     res = (
         db.table("posts")
-        .select("*, users_profile(username, avatar_url)")
+        .select("*, users(username, profile_pic)")
         .eq("user_id", user_id)
         .order("created_at", desc=True)
         .range(start, end)
@@ -257,7 +250,7 @@ def update_post(
         db.table("posts")
         .update({"caption": payload.caption})
         .eq("id", post_id)
-        .select("*, users_profile(username, avatar_url)")
+        .select("*, users(username, profile_pic)")
         .single()
         .execute()
     )
@@ -274,7 +267,7 @@ def update_post(
     description="Deletes your own post. Associated comments/likes are removed via FK ON DELETE CASCADE.",
 )
 def delete_post(
-    post_id: int = Path(..., ge=1),
+    post_id: UUID = Path(..., description="UUID of the post to delete"),
     current: AuthUser = Depends(get_current_user),
 ):
     db = _rls_client(current.access_token)
