@@ -19,7 +19,7 @@ class LikeStatusResponse(BaseModel):
 class LikedUser(BaseModel):
     user_id: UUID4
     username: str | None = None
-    avatar_url: str | None = None
+    profile_pic: str | None = None   
     liked_at: str
 
 class LikedUsersResponse(BaseModel):
@@ -42,28 +42,34 @@ def _liked_by(client, post_id: str, user_id: str) -> bool:
     res = client.table("likes").select("id").eq("post_id", post_id).eq("user_id", user_id).limit(1).execute()
     return bool(res.data)
 
+def _rls_client(user_token: str):
+    client = get_supabase_client()
+    client.postgrest.auth(user_token)
+    return client
+
 # ---------- Endpoints ----------
-@router.post("/posts/{post_id}/like", response_model=LikeToggleResponse, status_code=200)
+@router.post("/posts/{post_id}/like", response_model=LikeToggleResponse)
 def toggle_like(
     post_id: UUID4 = Path(...),
     user = Depends(get_current_user),
 ):
-    client = get_supabase_client()
-    _ensure_post_exists(client, str(post_id))
+    db = _rls_client(user.access_token)                 
+    _ensure_post_exists(db, str(post_id))
 
-    # remove if it's already existing or insert 
-    existed = client.table("likes").select("id").match({"post_id": str(post_id), "user_id": user.user_id}).limit(1).execute()
+    existed = (
+        db.table("likes")
+          .select("id")
+          .match({"post_id": str(post_id), "user_id": user.user_id})
+          .limit(1).execute()
+    )
     if existed.data:
-        # unlike
-        client.table("likes").delete().match({"post_id": str(post_id), "user_id": user.user_id}).execute()
+        db.table("likes").delete().match({"post_id": str(post_id), "user_id": user.user_id}).execute()
         liked = False
     else:
-        # like (avoid duplication with setting unique)
-        client.table("likes").insert({"post_id": str(post_id), "user_id": user.user_id}).execute()
+        db.table("likes").insert({"post_id": str(post_id), "user_id": user.user_id}).execute()
         liked = True
 
-    # count (read posts.like_count if using trigger)
-    count = _count_likes(client, str(post_id))
+    count = _count_likes(db, str(post_id))
     return LikeToggleResponse(post_id=post_id, liked=liked, count=count)
 
 @router.get("/posts/{post_id}/likes", response_model=LikeStatusResponse)
@@ -71,31 +77,32 @@ def get_like_status(
     post_id: UUID4 = Path(...),
     user = Depends(get_current_user),
 ):
-    client = get_supabase_client()
-    _ensure_post_exists(client, str(post_id))
-    count = _count_likes(client, str(post_id))
-    liked = _liked_by(client, str(post_id), user.user_id)
+    db = _rls_client(user.access_token)                
+    _ensure_post_exists(db, str(post_id))
+    count = _count_likes(db, str(post_id))
+    liked = _liked_by(db, str(post_id), user.user_id)
     return LikeStatusResponse(post_id=post_id, count=count, liked_by_me=liked)
 
 @router.get("/posts/{post_id}/likes/users", response_model=LikedUsersResponse)
 def list_liked_users(
-    post_id: UUID4,
+    post_id: UUID4 = Path(...),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    user = Depends(get_current_user),                   
 ):
-    client = get_supabase_client()
-    _ensure_post_exists(client, str(post_id))
+    db = _rls_client(user.access_token)                
+    _ensure_post_exists(db, str(post_id))
 
-    total_resp = client.table("likes").select("id", count="exact").eq("post_id", str(post_id)).execute()
+    total_resp = db.table("likes").select("id", count="exact").eq("post_id", str(post_id)).execute()
     total = int(total_resp.count or 0)
 
     resp = (
-        client.table("likes")
-        .select("user_id, created_at, users!inner(username,profile_pic)")
-        .eq("post_id", str(post_id))
-        .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
-        .execute()
+        db.table("likes")
+          .select("user_id, created_at, users!inner(id,username,profile_pic)")   
+          .eq("post_id", str(post_id))
+          .order("created_at", desc=True)
+          .range(offset, offset + limit - 1)
+          .execute()
     )
 
     users: list[LikedUser] = []
@@ -103,9 +110,9 @@ def list_liked_users(
         prof = row.get("users") or {}
         users.append(
             LikedUser(
-                user_id=row["user_id"],
+                user_id=prof.get("id") or row["user_id"],    
                 username=prof.get("username"),
-                profile_pic=prof.get("profile_pic"),
+                profile_pic=prof.get("profile_pic"),          
                 liked_at=row["created_at"],
             )
         )
