@@ -8,8 +8,7 @@ from fastapi.responses import JSONResponse
 import os
 from dotenv import load_dotenv
 
-# CORRECTED IMPORTS - Use relative imports since we're inside app/
-from .routers import auth, users, health, comments
+from .routers import auth, users, health, posts, likes, comments
 from .services.supabase_client import SupabaseClient
 
 load_dotenv()
@@ -106,7 +105,8 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(comments.router, prefix="/api/v1")
 app.include_router(health.router)
 app.include_router(auth.router)
-
+app.include_router(posts.router, prefix="/api/v1") 
+app.include_router(likes.router)
 
 if __name__ == "__main__":
     import uvicorn

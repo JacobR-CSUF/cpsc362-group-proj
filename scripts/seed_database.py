@@ -445,7 +445,7 @@ async def main():
     else:
         print("\n❌ Invalid option")
     
-    print("\n✅ Complete! Test at: http://localhost:8989/api/v1/users/")
+    print("\n✅ Complete! Test at: http://localhost:8001/api/v1/users/")
 
 
 if __name__ == "__main__":
