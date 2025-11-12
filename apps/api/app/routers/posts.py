@@ -4,95 +4,80 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, AnyUrl, UUID4
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-import os
-import jwt
 
 from ..services.supabase_client import get_supabase_client
+from ..dependencies import get_current_user as require_user  # reuse auth
 
 router = APIRouter(prefix="/posts", tags=["Posts"])
-bearer_scheme = HTTPBearer(auto_error=True)
-# =========================
-# Auth dependency
-# =========================
-class AuthUser(BaseModel):
-    user_id: str
-    access_token: str
+bearer_scheme = HTTPBearer(auto_error=True)                  # extract header token
+SELECT_FIELDS = "*, users(username, profile_pic), media(url)"
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)) -> AuthUser:
-# def get_current_user(authorization: Optional[str] = Header(None)) -> AuthUser:
-    """
-    Extract user_id (sub) from Supabase JWT.
-    Uses SUPABASE_JWT_SECRET (if set) for signature verification; otherwise decodes without verify.
-    """
-    # if not authorization or not authorization.lower().startswith("bearer "):
-    #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Authorization header")
+# ---------- models ----------
+from pydantic import BaseModel, Field, AnyUrl
+from typing import Optional
+from datetime import datetime
 
-    # token = authorization.split(" ", 1)[1].strip()
-    token = credentials.credentials
-    secret = os.getenv("JWT_SECRET")
+# prepare validator 
+try:
+    from pydantic import model_validator  # v2
+    _P2 = True
+except Exception:
+    from pydantic import root_validator as _root_validator  # v1
+    _P2 = False
 
-    try:
-        if secret:
-            payload = jwt.decode(token, secret, algorithms=["HS256"])
-        else:
-            payload = jwt.decode(token, options={"verify_signature": False})
-
-        sub = payload.get("sub") or payload.get("user_id")
-        if not sub:
-            raise HTTPException(status_code=401, detail="Invalid token: missing subject")
-
-        return AuthUser(user_id=sub, access_token=token)
-
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-
-# =========================
-# Pydantic models
-# =========================
 class PostCreate(BaseModel):
-    caption: str = Field(..., max_length=2000, description="Post caption (max 2000 chars)")
-    media_url: Optional[AnyUrl] = Field(None, description="Optional media URL")
+    caption: str = Field(..., max_length=2000)
+    media_url: Optional[AnyUrl] = None    
 
 
 class PostUpdate(BaseModel):
-    caption: str = Field(..., max_length=2000, description="Updated caption (max 2000 chars)")
+    caption: str = Field(..., max_length=2000)
 
+class AuthUser(BaseModel):
+    user_id: str
+    access_token: str
 
 class AuthorInfo(BaseModel):
     user_id: str
     username: str
     profile_pic: Optional[AnyUrl] = None
 
-
 class PostResponse(BaseModel):
-    id: int
+    id: UUID4
     user_id: str
     caption: str
+    media_id: Optional[UUID4] = None
     media_url: Optional[AnyUrl] = None
     created_at: datetime
-    updated_at: datetime
     author: AuthorInfo
 
 
-# =========================
-# Helpers
-# =========================
-def _iso_to_dt(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+# ---------- helpers ----------
+def _as_obj(v) -> Dict[str, Any]:
+    if isinstance(v, dict):
+        return v
+    if isinstance(v, list):
+        return v[0] if v else {}
+    return {}
+
+def _iso_to_dt(value):
+    if isinstance(value, datetime):
+        return value
+    if value is None:
+        return datetime.fromisoformat("1970-01-01T00:00:00+00:00")
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
 def _row_to_post(row: Dict[str, Any]) -> PostResponse:
-    profile = row.get("users") or {}
+    profile = _as_obj(row.get("users"))   
+    media   = _as_obj(row.get("media")) 
     return PostResponse(
-        id=row["id"],
+        id=row["id"],                      # UUID4
         user_id=row["user_id"],
         caption=row["caption"],
-        media_url=row.get("media_url"),
-        created_at=_iso_to_dt(row["created_at"]),
-        updated_at=_iso_to_dt(row["updated_at"]),
+        media_id=row.get("media_id"),      # UUID4 or None
+        media_url=media.get("url"),        # dict or list 
+        created_at=_iso_to_dt(row.get("created_at")),
         author=AuthorInfo(
             user_id=row["user_id"],
             username=profile.get("username", ""),
@@ -100,156 +85,122 @@ def _row_to_post(row: Dict[str, Any]) -> PostResponse:
         ),
     )
 
-
 def _rls_client(user_token: str):
     client = get_supabase_client()
-    client.postgrest.auth(user_token)
+    client.postgrest.auth(user_token)  # Use user token 
     return client
 
 
+def current_auth(
+    user: dict = Depends(require_user),                                      # Only valid user in DB
+    cred: HTTPAuthorizationCredentials = Security(bearer_scheme),            # access_token in header
+) -> AuthUser:
+    return AuthUser(user_id=user["id"], access_token=cred.credentials)
 
-# =========================
-# Endpoints
-# =========================
-@router.post(
-    "",
-    response_model=PostResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create new post",
-    description="Create a new post for the authenticated user. `caption` required, `media_url` optional.",
-)
-def create_post(payload: PostCreate, current: AuthUser = Depends(get_current_user)):
+# ---------- endpoints ----------
+@router.post("", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
+def create_post(payload: PostCreate, current: AuthUser = Depends(current_auth)):
     db = _rls_client(current.access_token)
 
-    data = {
+    media_id = None
+    if payload.media_url:
+        insm = db.table("media").insert({
+            "user_id": current.user_id,
+            "url": str(payload.media_url),
+        }).execute()
+        if getattr(insm, "error", None):
+            raise HTTPException(status_code=400, detail=insm.error.message)
+        media_id = insm.data[0]["id"]
+
+    ins = db.table("posts").insert({
         "user_id": current.user_id,
         "caption": payload.caption,
-        "media_url": str(payload.media_url) if payload.media_url else None,
-    }
+        "media_id": media_id,    # None -> NULL
+    }).execute()
+    if getattr(ins, "error", None):
+        raise HTTPException(status_code=400, detail=ins.error.message)
+    post_id = ins.data[0]["id"]
 
-    res = (
-        db.table("posts")
-        .insert(data)
-        .select("*, users(username, profile_pic)")
-        .execute()
-    )
+    res = db.table("posts").select(SELECT_FIELDS).eq("id", post_id).single().execute()
     if getattr(res, "error", None):
         raise HTTPException(status_code=400, detail=res.error.message)
-
-    return _row_to_post(res.data[0])
-
-
-@router.get(
-    "",
-    response_model=List[PostResponse],
-    summary="Get feed (paginated, latest first)",
-    description="Returns posts ordered by created_at DESC. Supports `limit` and `offset`.",
-)
-def get_feed(
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    current: AuthUser = Depends(get_current_user),
-):
-    db = _rls_client(current.access_token)
-    start, end = offset, offset + limit - 1
-
-    res = (
-        db.table("posts")
-        .select("*, users(username, profile_pic)")
-        .order("created_at", desc=True)
-        .range(start, end)
-        .execute()
-    )
-    if getattr(res, "error", None):
-        raise HTTPException(status_code=400, detail=res.error.message)
-
-    rows = res.data or []
-    return [_row_to_post(r) for r in rows]
-
-
-@router.get(
-    "/{post_id}",
-    response_model=PostResponse,
-    summary="Get a post by ID (with author)",
-    description="Returns a specific post and the author's profile (username, avatar).",
-)
-def get_post_by_id(
-    post_id: int = Path(..., ge=1),
-    current: AuthUser = Depends(get_current_user),
-):
-    db = _rls_client(current.access_token)
-
-    res = (
-        db.table("posts")
-        .select("*, users(username, profile_pic)")
-        .eq("id", post_id)
-        .single()
-        .execute()
-    )
-    if getattr(res, "error", None):
-        # Supabase Python client error message may contain "No rows"
-        if res.error.message and "No rows" in res.error.message:
-            raise HTTPException(status_code=404, detail="Post not found")
-        raise HTTPException(status_code=400, detail=res.error.message)
-
     return _row_to_post(res.data)
 
 
-@router.get(
-    "/user/{user_id}",
-    response_model=List[PostResponse],
-    summary="Get posts by user (paginated)",
-    description="Returns posts for a specific user ordered by created_at DESC.",
-)
+
+@router.get("", response_model=List[PostResponse])
+def get_feed(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current: AuthUser = Depends(current_auth),
+):
+    db = _rls_client(current.access_token)
+    res = (db.table("posts")
+        .select(SELECT_FIELDS)
+        .order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute())
+    if getattr(res, "error", None):
+        raise HTTPException(status_code=400, detail=res.error.message)
+    return [_row_to_post(r) for r in (res.data or [])]
+
+@router.get("/{post_id}", response_model=PostResponse)
+def get_post_by_id(post_id: UUID4, current: AuthUser = Depends(current_auth)):
+    db = _rls_client(current.access_token)
+    res = db.table("posts").select(SELECT_FIELDS).eq("id", str(post_id)).limit(1).execute()
+    if getattr(res, "error", None):
+        raise HTTPException(status_code=400, detail=res.error.message)
+    rows = res.data or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return _row_to_post(rows[0])
+
+@router.get("/user/{user_id}", response_model=List[PostResponse])
 def get_posts_by_user(
     user_id: str,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    current: AuthUser = Depends(get_current_user),
+    current: AuthUser = Depends(current_auth),
 ):
     db = _rls_client(current.access_token)
-    start, end = offset, offset + limit - 1
-
     res = (
         db.table("posts")
-        .select("*, users(username, profile_pic)")
+        .select(SELECT_FIELDS)
         .eq("user_id", user_id)
         .order("created_at", desc=True)
-        .range(start, end)
+        .range(offset, offset + limit - 1)
         .execute()
     )
     if getattr(res, "error", None):
         raise HTTPException(status_code=400, detail=res.error.message)
-
     return [_row_to_post(r) for r in (res.data or [])]
 
-
-@router.put(
-    "/{post_id}",
-    response_model=PostResponse,
-    summary="Update own post (caption only)",
-    description="Updates the caption of your own post. Ownership is enforced by RLS; we also pre-check for quicker 403s.",
-)
+@router.put("/{post_id}", response_model=PostResponse)
 def update_post(
-    post_id: int = Path(..., ge=1),
+    post_id: UUID4,
     payload: PostUpdate = ...,
-    current: AuthUser = Depends(get_current_user),
+    current: AuthUser = Depends(current_auth),
 ):
     db = _rls_client(current.access_token)
 
-    # Quick ownership check for better UX
     chk = db.table("posts").select("id, user_id").eq("id", post_id).single().execute()
     if getattr(chk, "error", None):
         if chk.error.message and "No rows" in chk.error.message:
             raise HTTPException(status_code=404, detail="Post not found")
+        raise HTTPException(status_code=400, detail=chk.error.message)
     if chk.data["user_id"] != current.user_id:
         raise HTTPException(status_code=403, detail="Not the owner of this post")
 
+    # 1) UPDATE
+    upd = db.table("posts").update({"caption": payload.caption}).eq("id", post_id).execute()
+    if getattr(upd, "error", None):
+        raise HTTPException(status_code=400, detail=upd.error.message)
+
+    # 2) organize final response using SELECT join
     res = (
         db.table("posts")
-        .update({"caption": payload.caption})
+        .select(SELECT_FIELDS)
         .eq("id", post_id)
-        .select("*, users(username, profile_pic)")
         .single()
         .execute()
     )
@@ -259,19 +210,9 @@ def update_post(
     return _row_to_post(res.data)
 
 
-@router.delete(
-    "/{post_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete own post",
-    description="Deletes your own post. Associated comments/likes are removed via FK ON DELETE CASCADE.",
-)
-def delete_post(
-    post_id: UUID4 = Path(..., description="UUID of the post to delete"),
-    current: AuthUser = Depends(get_current_user),
-):
+@router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_post(post_id: UUID4, current: AuthUser = Depends(current_auth)):
     db = _rls_client(current.access_token)
-
-    # Quick ownership check
     chk = db.table("posts").select("id, user_id").eq("id", post_id).single().execute()
     if getattr(chk, "error", None):
         if chk.error.message and "No rows" in chk.error.message:
