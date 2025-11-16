@@ -85,40 +85,47 @@ class SupabaseClient:
             }
 
     @classmethod
-    def query(cls, table: str, columns: str = "*"):
+    def query(cls, table: str, columns: str = "*", **filters):
         """
-        Helper function for SELECT queries
-        
+        Query table with filters and return results
+
         Args:
             table: Table name to query
             columns: Columns to select (default: "*")
-            
+            **filters: Keyword arguments for filtering (e.g., id="123", name="John")
+
         Returns:
-            Query builder object
+            List of dictionaries containing query results
         """
         try:
             client = cls.get_client()
-            return client.table(table).select(columns)
+            query = client.table(table).select(columns)
+
+            # Apply filters
+            for key, value in filters.items():
+                query = query.eq(key, value)
+
+            # Execute and return results
+            response = query.execute()
+            return response.data if response.data else []
+
         except Exception as e:
             raise Exception(f"Query failed: {str(e)}")
 
-    @classmethod
-    def insert(cls, table: str, data: dict | list):
-        """
-        Helper function for INSERT operations
-        
-        Args:
-            table: Table name
-            data: Data to insert (dict or list of dicts)
-            
-        Returns:
-            Insert operation result
-        """
-        try:
-            client = cls.get_client()
-            return client.table(table).insert(data).execute()
-        except Exception as e:
-            raise Exception(f"Insert failed: {str(e)}")
+
+    # In supabase_client.py
+    @staticmethod
+    def insert(table: str, data: dict) -> dict:
+        """Insert a single row into table"""
+        client = SupabaseClient.get_client()
+        response = client.table(table).insert(data).execute()
+
+        # Return the first item from response.data (the inserted record)
+        if response.data and len(response.data) > 0:
+            return response.data[0]  # ← Return the actual dictionary
+        else:
+            raise Exception("Insert failed - no data returned")
+
 
     @classmethod
     def update(cls, table: str, data: dict):
@@ -139,21 +146,32 @@ class SupabaseClient:
             raise Exception(f"Update failed: {str(e)}")
 
     @classmethod
-    def delete(cls, table: str):
+    def delete(cls, table: str, **filters):
         """
-        Helper function for DELETE operations
-        
+        Delete records from table based on filters
+
         Args:
             table: Table name
-            
+            **filters: Keyword arguments for filtering (e.g., id="123")
+
         Returns:
-            Query builder for delete (needs .eq() or .match() before .execute())
+            True if deletion was successful
         """
         try:
             client = cls.get_client()
-            return client.table(table).delete()
+            query = client.table(table).delete()
+
+            # Apply filters - IMPORTANT!
+            for key, value in filters.items():
+                query = query.eq(key, value)
+
+            # Execute the delete
+            response = query.execute()
+            return True
+
         except Exception as e:
             raise Exception(f"Delete failed: {str(e)}")
+
 
 
 # Convenience function to get client directly

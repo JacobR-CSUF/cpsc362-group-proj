@@ -118,21 +118,32 @@ async def seed_realistic_users(count=20):
 
 
 async def seed_realistic_media(users, count=40):
-    """Generate realistic media with Faker"""
+    """Generate realistic media with new MinIO schema"""
     if not FAKER_AVAILABLE or len(users) == 0:
         return []
-    
+
     print("\n" + "="*60)
     print(f"  Generating {count} Realistic Media 📸")
     print("="*60 + "\n")
-    
+
     client = get_supabase_client()
     fake = Faker()
-    
-    media_types = ["image", "image", "image", "video"]  # More images than videos
-    
-    # Fun media descriptions
-    image_descriptions = [
+
+    # Realistic file extensions and MIME types
+    image_types = [
+        (".jpg", "image/jpeg", 1024*1024*2),   # 2MB avg
+        (".png", "image/png", 1024*1024*3),     # 3MB avg
+        (".webp", "image/webp", 1024*1024*1),   # 1MB avg
+        (".gif", "image/gif", 1024*1024*4),     # 4MB avg
+    ]
+
+    video_types = [
+        (".mp4", "video/mp4", 1024*1024*20),    # 20MB avg
+        (".mov", "video/quicktime", 1024*1024*30), # 30MB avg
+    ]
+
+    # Fun captions for social media
+    image_captions = [
         "Captured this amazing moment! 📷✨",
         "Nature at its finest 🌿",
         "Can't believe I got this shot! 😍",
@@ -142,8 +153,8 @@ async def seed_realistic_media(users, count=40):
         "This view though! 😱",
         "Making memories 💫",
     ]
-    
-    video_descriptions = [
+
+    video_captions = [
         "Behind the scenes 🎬",
         "Watch till the end! 🎥",
         "This was wild! 😂",
@@ -151,36 +162,63 @@ async def seed_realistic_media(users, count=40):
         "Can't stop watching this 🔁",
         "POV: Living my best life 🎥",
     ]
-    
+
     created_media = []
-    
+
     for i in range(count):
         try:
             user = random.choice(users)
-            media_type = random.choice(media_types)
-            
-            if media_type == "image":
-                description = random.choice(image_descriptions) + " " + fake.sentence(nb_words=random.randint(3, 8))
+
+            # 70% images, 30% videos (realistic distribution)
+            if random.random() < 0.7:
+                ext, mime_type, base_size = random.choice(image_types)
+                media_type = "image"
+                caption = random.choice(image_captions)
+                # Generate fake original filename
+                original_filename = fake.word() + "_" + fake.word() + ext
             else:
-                description = random.choice(video_descriptions) + " " + fake.sentence(nb_words=random.randint(3, 8))
-            
+                ext, mime_type, base_size = random.choice(video_types)
+                media_type = "video"
+                caption = random.choice(video_captions)
+                original_filename = "VID_" + fake.bothify(text='####????') + ext
+
+            # Generate UUID-based filename (as if uploaded)
+            unique_filename = fake.uuid4() + ext
+
+            # Realistic file size variation
+            size = base_size + random.randint(-base_size//3, base_size//2)
+
+            # Generate public URL (as if from MinIO)
+            public_url = f"http://localhost:9000/social-media-uploads/{unique_filename}"
+
+            # Add some extra context to caption
+            if random.random() > 0.5:
+                caption += " " + fake.sentence(nb_words=random.randint(3, 8))
+
             media_data = {
-                "user_id": user["id"],
-                "url": fake.image_url(width=random.choice([640, 800, 1024]), height=random.choice([480, 600, 768])),
-                "type": media_type,
-                "description": description
+                "filename": unique_filename,
+                "original_filename": original_filename,
+                "size": size,
+                "mime_type": mime_type,
+                "media_type": media_type,
+                "public_url": public_url,
+                "uploaded_by": user["id"], 
+                "caption": caption  
             }
-            
+
             response = client.table("media").insert(media_data).execute()
-            
+
             if response.data:
                 created_media.append(response.data[0])
                 emoji = "📷" if media_type == "image" else "🎥"
-                print(f"{emoji} [{i+1}/{count}] {user['username']}: {description[:50]}...")
-            
-        except:
+                size_mb = size / (1024 * 1024)
+                print(f"{emoji} [{i+1}/{count}] {user['username']}: {original_filename} ({size_mb:.1f}MB)")
+
+        except Exception as e:
+            if VERBOSE:
+                print(f"  ⚠️ Error creating media: {e}")
             continue
-    
+
     print(f"\n✅ Created {len(created_media)} media items\n{'='*60}\n")
     return created_media
 
@@ -353,39 +391,50 @@ async def clear_test_data():
     """Clear all test data from database"""
     print("\n⚠️  WARNING: This will delete ALL data!")
     confirm = input("Type 'yes' to confirm: ")
-    
+
     if confirm.lower() != 'yes':
         print("❌ Cancelled")
         return
-    
+
     client = get_supabase_client()
     print("\nClearing data...")
-    
+
+    # Updated table list with correct column names
     tables = [
-        ("comments", "id"), ("likes", "id"), ("posts", "id"),
-        ("media", "id"), ("messages", "id"), ("friend_suggestions", "id"),
+        ("comments", "id"), 
+        ("likes", "id"), 
+        ("posts", "id"),
+        ("media", "id"),  # Still works with new schema
+        ("messages", "id"), 
+        ("friend_suggestions", "id"),
     ]
-    
+
     for table, id_col in tables:
         try:
-            client.table(table).delete().neq(id_col, "00000000-0000-0000-0000-000000000000").execute()
+            # Use a valid UUID or simply delete all
+            result = client.table(table).delete().neq(id_col, "00000000-0000-0000-0000-000000000000").execute()
             print(f"✅ Cleared {table}")
-        except:
+        except Exception as e:
+            if VERBOSE:
+                print(f"  ⚠️ Error clearing {table}: {e}")
             pass
-    
+
+    # Clear follows table
     try:
         client.table("follows").delete().neq("following_user_id", "00000000-0000-0000-0000-000000000000").execute()
         print(f"✅ Cleared follows")
     except:
         pass
-    
+
+    # Clear users last (due to foreign keys)
     try:
         client.table("users").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
         print(f"✅ Cleared users")
     except:
         pass
-    
+
     print("\n✅ All data cleared!\n")
+
 
 
 async def main():
