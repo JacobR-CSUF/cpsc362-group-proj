@@ -201,7 +201,7 @@ services:
 
   api:
     build:
-      context: ./apps/api       
+      context: ./apps/api
       dockerfile: Dockerfile
     container_name: fastapi_app
     ports:
@@ -216,16 +216,24 @@ services:
       - JWT_SECRET=super-secret-jwt-token-with-at-least-32-characters-long
       - API_PORT=8001
       - DEBUG=True
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_SECURE=false
     volumes:
-      - ./apps/api:/app          
+      - ./apps/api:/app
     command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
     depends_on:
       postgres:
         condition: service_healthy
       kong:
         condition: service_started
+      minio:
+        condition: service_started
     networks:
       - app-network
+
+
 
 networks:
   app-network:

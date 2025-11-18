@@ -21,16 +21,25 @@ CREATE TABLE follows (
   CONSTRAINT fk_followed_user FOREIGN KEY (followed_user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Media table (user-uploaded media)
+-- Media table (user-uploaded media via MinIO)
 CREATE TABLE media (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL,
-  url VARCHAR NOT NULL,
-  type VARCHAR, -- photo or video
-  description TEXT,
+  filename VARCHAR(255) NOT NULL UNIQUE,
+  original_filename VARCHAR(255) NOT NULL,
+  size BIGINT NOT NULL,
+  mime_type VARCHAR(100) NOT NULL,
+  media_type VARCHAR(20) NOT NULL CHECK (media_type IN ('image', 'video')),
+  public_url TEXT NOT NULL,
+  uploaded_by UUID NOT NULL,
+  caption TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_media_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  CONSTRAINT fk_media_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- Create indexes for better performance
+CREATE INDEX idx_media_uploaded_by ON media(uploaded_by);
+CREATE INDEX idx_media_created_at ON media(created_at DESC);
+CREATE INDEX idx_media_media_type ON media(media_type);
 
 -- Posts table (user posts)
 CREATE TABLE posts (
