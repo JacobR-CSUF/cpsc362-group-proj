@@ -69,6 +69,45 @@ def generate_unique_filename(original_filename: str) -> str:
     unique_id = str(uuid4())
     return f"{unique_id}{file_ext}"
 
+
+# AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://ai:8001")
+
+# async def check_image_unsafe_with_ai(
+#     file_content: bytes,
+#     filename: str,
+#     content_type: str,
+# ) -> bool:
+#     """
+#     Call AI moderation service → Return True when image is unsafe.
+#     """
+#     if not AI_SERVICE_URL:
+#         raise HTTPException(
+#             status_code=status.HTTP_502_BAD_GATEWAY,
+#             detail="Image moderation service is not configured.",
+#         )
+
+#     try:
+#         async with httpx.AsyncClient(timeout=30.0) as client:
+#             resp = await client.post(
+#                 f"{AI_SERVICE_URL}/moderation/image",
+#                 files={"file": (filename, file_content, content_type)},
+#             )
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_502_BAD_GATEWAY,
+#             detail=f"Failed to contact AI moderation service: {str(e)}",
+#         )
+
+#     if resp.status_code != 200:
+#         raise HTTPException(
+#             status_code=status.HTTP_502_BAD_GATEWAY,
+#             detail=f"AI moderation service error: {resp.text}",
+#         )
+
+#     data = resp.json()
+#     return bool(data.get("unsafe", False))
+
+
 @router.post("/upload",
              response_model=MediaUploadResponse,
              status_code=status.HTTP_201_CREATED)
@@ -101,6 +140,19 @@ async def upload_media(
                 detail=size_error
             )
 
+        # AI Moderation for images (need to review)
+        # if media_type == "image":
+        #     unsafe = await check_image_unsafe_with_ai(
+        #         file_content=file_content,
+        #         filename=file.filename,
+        #         content_type=file.content_type,
+        #     )
+        #     if unsafe:
+        #         raise HTTPException(
+        #             status_code=status.HTTP_400_BAD_REQUEST,
+        #             detail="Blocked upload: Image contains unsafe content.",
+        #         )
+        
         # Generate unique filename
         unique_filename = generate_unique_filename(file.filename)
 
