@@ -70,7 +70,7 @@ def generate_unique_filename(original_filename: str) -> str:
     return f"{unique_id}{file_ext}"
 
 
-# AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://ai:8001")
+# AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://ai:8002")
 
 # async def check_image_unsafe_with_ai(
 #     file_content: bytes,
