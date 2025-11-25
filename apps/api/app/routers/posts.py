@@ -369,7 +369,7 @@ def delete_post(
             # Get media details for MinIO deletion
             media_res = (
                 db.table("media")
-                .select("url, uploaded_by")
+                .select("public_url, uploaded_by")
                 .eq("id", str(media_id))
                 .single()
                 .execute()
@@ -379,7 +379,7 @@ def delete_post(
                 # Verify user still owns the media
                 if media_res.data["uploaded_by"] == current.user_id:
                     # Extract filename from URL for MinIO deletion
-                    url = media_res.data["url"]
+                    url = media_res.data["public_url"]
                     filename = url.split("/")[-1] if "/" in url else url
                     
                     # Delete from MinIO
