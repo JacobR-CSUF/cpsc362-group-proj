@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 import os
 from dotenv import load_dotenv
 
-from .routers import auth, users, health, posts, likes, comments
+from .routers import auth, users, health, posts, likes, comments, media
 from .services.supabase_client import SupabaseClient
 
 load_dotenv()
@@ -107,6 +107,7 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(posts.router, prefix="/api/v1") 
 app.include_router(likes.router)
+app.include_router(media.router, prefix="/api/v1")
 
 if __name__ == "__main__":
     import uvicorn
