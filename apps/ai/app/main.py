@@ -5,7 +5,7 @@ from app.services.gemini_moderation import is_image_unsafe
 app = FastAPI(
     title="AI Service",
     description="AI features: Transcription, Moderation, Summarization",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 @app.get("/health")

@@ -25,21 +25,21 @@ httpx>=0.25.0
 minio>=7.2.0
 
 # ============================================
-# XP-43: OpenAI Whisper (Local Transcription)
+# XP-55: OpenAI Whisper (Local Transcription)
 # ============================================
 openai-whisper>=20231117
 torch>=2.1.0
 torchaudio>=2.1.0
 
 # ============================================
-# XP-44: ShieldGemma 2B (Local Text Moderation)
+# XP-56: ShieldGemma 2B (Local Text Moderation)
 # ============================================
 transformers>=4.36.0
 accelerate>=0.25.0
 sentencepiece>=0.1.99
 
 # ============================================
-# XP-45 & XP-46: Google Gemini (Cloud API)
+# XP-57 & XP-58: Google Gemini (Cloud API)
 # - Image Moderation
 # - Video Summarization
 # ============================================

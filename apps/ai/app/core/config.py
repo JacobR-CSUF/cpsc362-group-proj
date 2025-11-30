@@ -20,15 +20,6 @@ class Settings(BaseSettings):
     SHIELDGEMMA_DEVICE: str = "cpu"  # cpu or cuda
 
     # ============================================
-    # MinIO Settings (Media File Access)
-    # ============================================
-    MINIO_ENDPOINT: str = "minio:9000"
-    MINIO_ACCESS_KEY: str = "minioadmin"
-    MINIO_SECRET_KEY: str = "minioadmin123"
-    MINIO_SECURE: bool = False
-    MINIO_BUCKET: str = "media"
-
-    # ============================================
     # Image Moderation Settings
     # ============================================
     IMAGE_MODERATION_THRESHOLD: str = "strict"  # strict, moderate, lenient
