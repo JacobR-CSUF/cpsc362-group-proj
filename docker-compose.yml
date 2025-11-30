@@ -233,6 +233,35 @@ services:
     networks:
       - app-network
 
+  ai:
+    build:
+      context: ./apps/ai
+      dockerfile: Dockerfile
+    container_name: social_media_ai
+    ports:
+      - "0.0.0.0:8002:8002"
+    env_file:
+      - ./apps/ai/.env
+    environment:
+      # MinIO access (for fetching media files)
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin123
+      - MINIO_SECURE=false
+      - MINIO_BUCKET=media
+      # Whisper settings
+      - WHISPER_MODEL_SIZE=base
+      # ShieldGemma settings
+      - SHIELDGEMMA_DEVICE=cpu
+    volumes:
+      - ./apps/ai:/app
+      - ai_model_cache:/root/.cache    # Cache for downloaded models
+    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+    depends_on:
+      - minio
+    networks:
+      - app-network
+
 
 
 networks:
@@ -243,3 +272,4 @@ volumes:
   minio_data:
   postgres_data:
   storage_data:
+  ai_model_cache:

@@ -25,7 +25,9 @@ Thumbs.db
 # Logs
 *.log
 
-apps/api/.DS_Store
+**/.DS_Store
+**/__pycache__/
+*.pyc
 apps/api/app/__pycache__/__init__.cpython-311.pyc
 apps/api/app/__pycache__/__init__.cpython-313.pyc
 apps/api/app/__pycache__/dependencies.cpython-311.pyc
