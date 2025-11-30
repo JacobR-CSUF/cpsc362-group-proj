@@ -1,27 +1,35 @@
-# Base image
+# apps/ai/Dockerfile
 FROM python:3.11-slim
 
-# create workspace directory
+# Set working directory
 WORKDIR /app
 
-# system dependencies
+# Install system dependencies for:
+# - ffmpeg: Audio/video processing (Whisper)
+# - build-essential: Compiling native extensions
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# copy requirements
+# Copy requirements first (for Docker layer caching)
 COPY requirements.txt .
-RUN pip install --upgrade pip && \
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# copy the application code
+# Copy application code
 COPY . .
 
-# expose port for AI service
+# Expose port for FastAPI
 EXPOSE 8002
 
-# Set PYTHONPATH so "app" package is recognized
-ENV PYTHONPATH=/app
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8002/health || exit 1
 
-# CMD – AI moderation service
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
+# Default command (can be overridden in docker-compose)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]

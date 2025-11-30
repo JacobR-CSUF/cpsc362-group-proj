@@ -3,10 +3,19 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, status
 from app.services.gemini_moderation import is_image_unsafe  
 
 app = FastAPI(
-    title="AI Service - Image Moderation",
-    version="1.0.0",
+    title="AI Service",
+    description="AI features: Transcription, Moderation, Summarization",
+    version="1.1.0"
 )
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker"""
+    return {"status": "healthy", "service": "ai"}
+
+@app.get("/")
+async def root():
+    return {"message": "AI Service is running. See /docs for API documentation."}
 
 @app.post("/moderation/image")
 async def moderate_image(file: UploadFile = File(...)):
