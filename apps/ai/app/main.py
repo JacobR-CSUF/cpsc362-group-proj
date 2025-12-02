@@ -1,8 +1,19 @@
 # /root/apps/ai/app/main.py
-from fastapi import FastAPI, UploadFile, File, HTTPException, status
+import httpx
+import logging
+from typing import Optional
+
+from fastapi import FastAPI, UploadFile, File, HTTPException, status, Query
 from pydantic import BaseModel, Field
-from app.services.gemini_moderation import is_image_unsafe  
+
+from app.services.gemini_moderation import (
+    moderate_image as moderate_image_service,
+    SafetyLevel,
+    ModerationError,
+)
+from app.services.emotion_detect import predict_emotion_from_bytes
 from app.services.gemini_summarizer import GeminiTextSummarizer, SummaryStyle
+
 from app.services.whisper_service import (
     TranscribeRequest,
     TranscribeResponse,
@@ -27,17 +38,90 @@ async def health_check():
 async def root():
     return {"message": "AI Service is running. See /docs for API documentation."}
 
-@app.post("/moderation/image")
-async def moderate_image(file: UploadFile = File(...)):
-    if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
+class ImageModerationResponse(BaseModel):
+    is_safe: bool = Field(..., description="True if image is allowed on the platform")
+    reason: str = Field(..., description="Short explanation for the decision")
+    categories: list[str] = Field(
+        default_factory=list,
+        description="List of categories with severity, e.g. ['nudity:severe']",
+    )
+    level: SafetyLevel = Field(..., description="Applied safety threshold level")
+
+@app.post(
+    "/moderation/image",
+    response_model=ImageModerationResponse,
+    summary="Moderate image with Google Gemini",
+    description=(
+        "Accepts either a direct file upload or a presigned URL and checks if "
+        "the image is safe for a general-audience platform. Supports JPEG, PNG, "
+        "WebP, GIF. Safety level can be strict, moderate, or lenient."
+    ),
+)
+async def moderate_image(
+    file: Optional[UploadFile] = File(None),
+    file_url: Optional[str] = Query(
+        None,
+        description="Presigned URL to the image file (if not uploading directly)",
+    ),
+    level: SafetyLevel = Query(
+        SafetyLevel.MODERATE,
+        description="Safety threshold level: strict, moderate, or lenient",
+    ),
+):
+    # validate input: Either file or file_url must be provided.
+    if file is None and not file_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only image files are allowed.",
+            detail="Either file upload or file_url must be provided.",
         )
 
-    image_bytes = await file.read()
-    unsafe = is_image_unsafe(image_bytes=image_bytes, mime_type=file.content_type)
-    return {"unsafe": unsafe}
+    if file is not None and file_url is not None:
+        # If both are provided, file takes precedence.
+        logger = logging.getLogger(__name__)
+        logger.info("Both file and file_url provided; using uploaded file.")
+
+    # 1) load image byte
+    if file is not None:
+        if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only JPEG, PNG, WebP, and GIF are allowed.",
+            )
+        mime_type = file.content_type
+        image_bytes = await file.read()
+    else:
+        # download from presigned URL
+        async with httpx.AsyncClient(timeout=15) as client_http:
+            try:
+                resp = await client_http.get(file_url)
+                resp.raise_for_status()
+            except httpx.HTTPError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to download image from URL: {e}",
+                )
+        mime_type = resp.headers.get("content-type", "image/jpeg")
+        image_bytes = resp.content
+
+    # 2) execute moderation
+    try:
+        result = moderate_image_service(
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+            level=level,
+        )
+    except ModerationError as me:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(me),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error during image moderation: {e}",
+        )
+
+    return ImageModerationResponse(**result)
 
 
 class TranscribeAndSummarizeRequest(TranscribeRequest):
@@ -76,7 +160,7 @@ def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest) -> Transcri
     High-level pipeline:
     1. whisper_service.transcribe(...) → {'text': ...}
     2. GeminiTextSummarizer.summarize(text=..., style=...)
-    3. transcript + summary 함께 반환
+    3. return transcript + summary 
     """
     # 1) Transcribe phase
     try:
@@ -139,3 +223,59 @@ def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest) -> Transcri
         summary=summary_text,
         style=payload.style,
     )
+
+
+@app.post(
+    "/emotion/detect",
+    summary="Detect emotion from image",
+    description="Accepts direct file upload or presigned URL and performs emotion detection."
+)
+async def detect_emotion(
+    file: UploadFile = File(None),
+    file_url: str | None = Query(
+        default=None,
+        description="Presigned URL to the image file (optional)"
+    )
+):
+    # --- check input ---
+    if file is None and file_url is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Either file or file_url must be provided."
+        )
+
+    # Priority: Use the uploaded file if it exists.
+    if file is not None:
+        if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
+            raise HTTPException(
+                status_code=400,
+                detail="Supported image types: JPEG, PNG, WebP, GIF."
+            )
+        image_bytes = await file.read()
+    else:
+        # download from presigned URL
+        async with httpx.AsyncClient(timeout=20) as client:
+            try:
+                resp = await client.get(file_url)
+                resp.raise_for_status()
+            except Exception as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to download image from URL: {e}"
+                )
+        image_bytes = resp.content
+
+    # --- analyze emotion ---
+    try:
+        label, score, scores = predict_emotion_from_bytes(image_bytes)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Emotion detection failed: {e}"
+        )
+
+    return {
+        "top_emotion": label,
+        "score": score,
+        "all_scores": scores,
+    }
