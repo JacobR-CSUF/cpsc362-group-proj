@@ -1,7 +1,5 @@
 # /root/apps/ai/app/main.py
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
-
-
 from app.services.gemini_moderation import is_image_unsafe
 from app.services.whisper_service import (
     TranscribeRequest,
