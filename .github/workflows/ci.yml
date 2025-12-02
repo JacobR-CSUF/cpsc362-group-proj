@@ -36,7 +36,7 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-          version: 1.56.1
+          version: 1.90.9
 
       - name: Wait for Tailscale connection
         run: |
@@ -58,7 +58,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           timeout: 300s
-          # ← PASS SECRETS AS ENVIRONMENT VARIABLES
           envs: GEMINI_API_KEY
           script: |
             echo "Starting deployment..."
@@ -82,7 +81,7 @@ jobs:
             echo "Latest commit:"
             git log -1 --oneline
 
-            # ← CREATE .env FILE ON SERVER WITH SECRET
+            # CREATE .env FILE ON SERVER WITH SECRET
             echo "Creating AI service .env file..."
             cat > apps/ai/.env << EOF
             GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -123,7 +122,6 @@ jobs:
 
             echo "✅ Deployment complete!"
         env:
-          # ← PASS GITHUB SECRET TO SSH SESSION
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Deployment Summary
