@@ -43,7 +43,6 @@ def _compress_if_needed(
 
     try:
         img = Image.open(BytesIO(image_bytes)).convert("RGB")
-        # 단순하게 긴 변 기준으로 리사이즈
         max_dim = 1024
         w, h = img.size
         scale = min(max_dim / float(max(w, h)), 1.0)
