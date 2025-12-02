@@ -3,7 +3,7 @@ name: Deploy to Production Server via Tailscale
 on:
   push:
     branches:
-      - main  # Triggers on merge to main
+      - main
   pull_request:
     branches:
       - main
@@ -36,19 +36,26 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-          version: 1.56.1
+          version: 1.90.9
 
-      - name: Wait for Tailscale connection
+      - name: Wait for Tailscale connection and test connectivity
         run: |
           echo "Waiting for Tailscale to establish connection..."
-          sleep 5
-          tailscale status
-          echo "Connected to Tailscale network!"
+          sleep 10
 
-      - name: Test connectivity to server
-        run: |
-          echo "Testing connection to ${{ secrets.SERVER_HOST }}..."
-          ping -c 3 ${{ secrets.SERVER_HOST }}
+          echo "Tailscale status:"
+          tailscale status
+
+          echo "Testing connectivity using tailscale ping..."
+          tailscale ping -c 3 ${{ secrets.SERVER_HOST }} || {
+            echo "⚠️ Tailscale ping failed, trying regular ping..."
+            ping -c 3 ${{ secrets.SERVER_HOST }} || {
+              echo "⚠️ Regular ping also failed, but continuing deployment..."
+              echo "This may be due to ICMP being blocked - SSH should still work"
+            }
+          }
+
+          echo "✅ Network setup complete"
 
       - name: Deploy to Server via SSH
         uses: appleboy/ssh-action@v1.0.0
@@ -58,31 +65,25 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           timeout: 300s
-          # ← PASS SECRETS AS ENVIRONMENT VARIABLES
           envs: GEMINI_API_KEY
           script: |
+            echo "✅ SSH connection successful!"
             echo "Starting deployment..."
 
-            # Navigate to project directory
             cd ~/cpsc362-group-proj
 
-            # Show current status
             echo "Current git status:"
             git status
 
-            # Fetch latest changes from main
             echo "Fetching latest changes..."
             git fetch origin main
 
-            # Reset to match remote main exactly
             echo "Resetting to origin/main..."
             git reset --hard origin/main
 
-            # Show what changed
             echo "Latest commit:"
             git log -1 --oneline
 
-            # ← CREATE .env FILE ON SERVER WITH SECRET
             echo "Creating AI service .env file..."
             cat > apps/ai/.env << EOF
             GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -93,37 +94,29 @@ jobs:
 
             echo "✅ Environment variables configured"
 
-            # Pull latest Docker images
             echo "Pulling Docker images..."
             docker-compose pull
 
-            # Stop current services
             echo "Stopping services..."
             docker-compose down
 
-            # Start services with rebuild
             echo "Starting services..."
             docker-compose up -d --build
 
-            # Wait for services to start
             echo "Waiting for services to initialize..."
             sleep 10
 
-            # Show running containers
             echo "Running containers:"
             docker-compose ps
 
-            # Verify AI service health
             echo "Checking AI service health..."
             curl -f http://localhost:8002/health || echo "⚠️ AI service not responding yet"
 
-            # Clean up old images
             echo "Cleaning up old Docker images..."
             docker image prune -af
 
             echo "✅ Deployment complete!"
         env:
-          # ← PASS GITHUB SECRET TO SSH SESSION
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Deployment Summary
