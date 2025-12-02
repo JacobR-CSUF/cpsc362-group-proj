@@ -1,0 +1,56 @@
+
+# apps/ai/requirements.txt
+
+# ============================================
+# FastAPI Framework
+# ============================================
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# ============================================
+# Configuration & Validation
+# ============================================
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# ============================================
+# HTTP Client (for calling external APIs)
+# ============================================
+httpx>=0.25.0
+
+# ============================================
+# MinIO Client (for accessing stored media)
+# ============================================
+minio>=7.2.0
+
+# ============================================
+# XP-55: OpenAI Whisper (Local Transcription)
+# ============================================
+openai-whisper>=20231117
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# ============================================
+# XP-56: ShieldGemma 2B (Local Text Moderation)
+# ============================================
+transformers>=4.36.0
+accelerate>=0.25.0
+sentencepiece>=0.1.99
+
+# ============================================
+# XP-57 & XP-58: Google Gemini (Cloud API)
+# - Image Moderation
+# - Video Summarization
+# ============================================
+google-genai>=0.3.0
+
+# ============================================
+# Image Processing
+# ============================================
+Pillow>=10.1.0
+
+# ============================================
+# Audio/Video Processing Utilities
+# ============================================
+ffmpeg-python>=0.2.0
