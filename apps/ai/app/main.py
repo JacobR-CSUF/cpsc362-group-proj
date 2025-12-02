@@ -1,10 +1,9 @@
 # /root/apps/ai/app/main.py
-import httpx
-import logging
-from typing import Optional
-
 from fastapi import FastAPI, UploadFile, File, HTTPException, status, Query
 from pydantic import BaseModel, Field
+from typing import Optional
+import httpx
+import logging
 
 from app.services.gemini_moderation import (
     moderate_image as moderate_image_service,
@@ -29,62 +28,55 @@ app = FastAPI(
     version="1.1.0"
 )
 
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Docker"""
     return {"status": "healthy", "service": "ai"}
 
+
 @app.get("/")
 async def root():
     return {"message": "AI Service is running. See /docs for API documentation."}
+
 
 class ImageModerationResponse(BaseModel):
     is_safe: bool = Field(..., description="True if image is allowed on the platform")
     reason: str = Field(..., description="Short explanation for the decision")
     categories: list[str] = Field(
         default_factory=list,
-        description="List of categories with severity, e.g. ['nudity:severe']",
+        description="List of categories with severity"
     )
-    level: SafetyLevel = Field(..., description="Applied safety threshold level")
+    level: SafetyLevel = Field(..., description="Safety level applied")
+
 
 @app.post(
     "/moderation/image",
     response_model=ImageModerationResponse,
     summary="Moderate image with Google Gemini",
-    description=(
-        "Accepts either a direct file upload or a presigned URL and checks if "
-        "the image is safe for a general-audience platform. Supports JPEG, PNG, "
-        "WebP, GIF. Safety level can be strict, moderate, or lenient."
-    ),
+    description="Supports file upload or presigned URL. JPEG/PNG/WebP/GIF.",
 )
 async def moderate_image(
     file: Optional[UploadFile] = File(None),
-    file_url: Optional[str] = Query(
-        None,
-        description="Presigned URL to the image file (if not uploading directly)",
-    ),
-    level: SafetyLevel = Query(
-        SafetyLevel.MODERATE,
-        description="Safety threshold level: strict, moderate, or lenient",
-    ),
+    file_url: Optional[str] = Query(None, description="Presigned image URL"),
+    level: SafetyLevel = Query(SafetyLevel.MODERATE),
 ):
-    # validate input: Either file or file_url must be provided.
+    # validate input
     if file is None and not file_url:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             detail="Either file upload or file_url must be provided.",
         )
 
+    # If both exist, uploaded file wins
     if file is not None and file_url is not None:
-        # If both are provided, file takes precedence.
-        logger = logging.getLogger(__name__)
-        logger.info("Both file and file_url provided; using uploaded file.")
+        logging.getLogger(__name__).info("Both file and file_url provided; using uploaded file.")
 
-    # 1) load image byte
+    # 1) load image bytes
     if file is not None:
         if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail="Only JPEG, PNG, WebP, and GIF are allowed.",
             )
         mime_type = file.content_type
@@ -97,7 +89,7 @@ async def moderate_image(
                 resp.raise_for_status()
             except httpx.HTTPError as e:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=400,
                     detail=f"Failed to download image from URL: {e}",
                 )
         mime_type = resp.headers.get("content-type", "image/jpeg")
@@ -111,23 +103,16 @@ async def moderate_image(
             level=level,
         )
     except ModerationError as me:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(me),
-        )
+        raise HTTPException(502, str(me))
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error during image moderation: {e}",
-        )
+        raise HTTPException(500, f"Unexpected error during image moderation: {e}")
 
     return ImageModerationResponse(**result)
 
 
 class TranscribeAndSummarizeRequest(TranscribeRequest):
     """
-    Add a style field to the existing TranscribeRequest 
-    so that the request model can receive “how to summarize” in a single request.
+    Extends TranscribeRequest with summary style field.
     """
     style: SummaryStyle = Field(
         default=SummaryStyle.BRIEF,
@@ -136,63 +121,38 @@ class TranscribeAndSummarizeRequest(TranscribeRequest):
 
 
 class TranscribeAndSummarizeResponse(BaseModel):
-    """
-    The final response to be returned to the client:
-	•	transcript: the full text obtained from Whisper
-	•	summary: the summary generated by Gemini
-    """
-    transcript: str = Field(..., description="Full transcript text from Whisper")
+    transcript: str = Field(..., description="Full transcript text")
     summary: str = Field(..., description="Generated summary from Gemini")
     style: SummaryStyle = Field(..., description="Summary style used")
+
 
 @app.post(
     "/transcribe-and-summarize",
     response_model=TranscribeAndSummarizeResponse,
-    summary="Transcribe audio/video and summarize with Gemini",
-    description=(
-        "1) Uses Whisper service to transcribe the input (e.g., from a presigned URL) "
-        "and 2) summarizes the resulting text with Google Gemini. "
-        "You can choose summary style: brief, detailed, or bullet_points."
-    ),
+    summary="Transcribe + summarize"
 )
-def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest) -> TranscribeAndSummarizeResponse:
+def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest):
     """
-    High-level pipeline:
-    1. whisper_service.transcribe(...) → {'text': ...}
-    2. GeminiTextSummarizer.summarize(text=..., style=...)
-    3. return transcript + summary 
+    1) Whisper transcription → text
+    2) Gemini summarization → summary
+    3) return both
     """
+
     # 1) Transcribe phase
     try:
-        # assuming whisper_service.transcribe is sync
         transcribe_result: TranscribeResponse = whisper_service.transcribe(payload)
     except DownloadError as de:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to download media for transcription: {de}",
-        )
+        raise HTTPException(400, f"Failed to download media: {de}")
     except UnsupportedMediaError as ue:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported media for transcription: {ue}",
-        )
+        raise HTTPException(415, f"Unsupported media: {ue}")
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error during transcription: {e}",
-        )
+        raise HTTPException(500, f"Unexpected transcription error: {e}")
 
-    # cc_result = transcribe() would return {'text': "..."} 
-    # assuming there would be text field in TranscribeResponse
-    transcript_text = getattr(transcribe_result, "text", None) or getattr(
-        transcribe_result, "transcript", None
-    )
+    transcript_text = getattr(transcribe_result, "text", None) or \
+                      getattr(transcribe_result, "transcript", None)
 
     if not transcript_text or not transcript_text.strip():
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Transcription returned empty text; cannot summarize.",
-        )
+        raise HTTPException(500, "Transcription returned empty text; cannot summarize.")
 
     # 2) Summarize phase
     try:
@@ -202,22 +162,12 @@ def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest) -> Transcri
             style=payload.style,
         )
     except ValueError as ve:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(ve),
-        )
+        raise HTTPException(400, str(ve))
     except RuntimeError as re:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(re),
-        )
+        raise HTTPException(502, str(re))
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error during summarization: {e}",
-        )
+        raise HTTPException(500, f"Unexpected error during summarization: {e}")
 
-    # 3) return transcript + summary
     return TranscribeAndSummarizeResponse(
         transcript=transcript_text,
         summary=summary_text,
@@ -228,28 +178,25 @@ def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest) -> Transcri
 @app.post(
     "/emotion/detect",
     summary="Detect emotion from image",
-    description="Accepts direct file upload or presigned URL and performs emotion detection."
+    description="Supports uploaded file or presigned URL"
 )
 async def detect_emotion(
     file: UploadFile = File(None),
-    file_url: str | None = Query(
-        default=None,
-        description="Presigned URL to the image file (optional)"
-    )
+    file_url: Optional[str] = Query(None),
 ):
     # --- check input ---
     if file is None and file_url is None:
         raise HTTPException(
             status_code=400,
-            detail="Either file or file_url must be provided."
+            detail="Either file or file_url must be provided.",
         )
 
-    # Priority: Use the uploaded file if it exists.
+    # Priority: Use uploaded file
     if file is not None:
         if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
             raise HTTPException(
                 status_code=400,
-                detail="Supported image types: JPEG, PNG, WebP, GIF."
+                detail="Supported types: JPEG, PNG, WebP, GIF.",
             )
         image_bytes = await file.read()
     else:
@@ -261,7 +208,7 @@ async def detect_emotion(
             except Exception as e:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Failed to download image from URL: {e}"
+                    detail=f"Failed to download image: {e}",
                 )
         image_bytes = resp.content
 
@@ -271,7 +218,7 @@ async def detect_emotion(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Emotion detection failed: {e}"
+            detail=f"Emotion detection failed: {e}",
         )
 
     return {
@@ -279,3 +226,26 @@ async def detect_emotion(
         "score": score,
         "all_scores": scores,
     }
+
+
+@app.post(
+    "/transcribe",
+    response_model=TranscribeResponse,
+    summary="Transcribe audio/video via Whisper (URL-based)",
+)
+async def transcribe(payload: TranscribeRequest):
+    """Transcribe Service (URL-based).
+        Insert JSON
+    """
+    try:
+        result = await whisper_service.transcribe_from_url(
+            file_url=str(payload.file_url),
+            language=None if payload.language in (None, "", "string") else payload.language,
+        )
+        return result
+    except UnsupportedMediaError as exc:
+        raise HTTPException(415, str(exc))
+    except DownloadError as exc:
+        raise HTTPException(502, str(exc))
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
