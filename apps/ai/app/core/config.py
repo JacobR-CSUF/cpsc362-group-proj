@@ -1,6 +1,7 @@
 # apps/ai/app/core/config.py
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     """Configuration settings for AI service"""
 
@@ -28,5 +29,6 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = False  # Allow lowercase env vars
         extra = "ignore"  # Ignore extra fields (optional safety net)
+
 
 settings = Settings()
