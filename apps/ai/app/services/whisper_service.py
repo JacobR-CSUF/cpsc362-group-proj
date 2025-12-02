@@ -60,7 +60,7 @@ class TranscribeResponse(BaseModel):
 
 
 async def _get_model():
-    """Lazy-load the Whisper model once per process."""
+    """Lazy-load the Whisper model once per process"""
     global _model
     if _model is None:
         async with _model_lock:
