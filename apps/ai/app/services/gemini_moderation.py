@@ -74,11 +74,28 @@ def _call_gemini_with_retry(
 	Handles temporary errors (network issues, 5xx responses, etc.).
     """
     last_exc = None
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "is_flagged": types.Schema(type=types.Type.BOOLEAN),
+                "categories": types.Schema(
+                    type=types.Type.ARRAY,
+                    items=types.Schema(type=types.Type.STRING),
+                ),
+                "reason": types.Schema(type=types.Type.STRING),
+            },
+            required=["is_flagged", "categories", "reason"],
+        ),
+    )
+
     for attempt in range(1, max_retries + 1):
         try:
             return client.models.generate_content(
                 model=MODEL_NAME,
                 contents=contents,
+                config=config,  
             )
         except Exception as e:
             last_exc = e
@@ -92,7 +109,10 @@ def _call_gemini_with_retry(
                 time.sleep(backoff_seconds * attempt)
             else:
                 break
-    raise ModerationError(f"Gemini moderation failed after {max_retries} attempts: {last_exc}")
+
+    raise ModerationError(
+        f"Gemini moderation failed after {max_retries} attempts: {last_exc}"
+    )
 
 
 def _apply_threshold(
