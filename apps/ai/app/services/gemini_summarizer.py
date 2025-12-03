@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Optional
 
 from google import genai
-
+from google.genai import types 
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class GeminiTextSummarizer:
 
     def __init__(
         self,
-        model_name: str = "gemini-2.5-flash",  
+        model_name: str = "gemini-2.5-flash",
         api_key_env: str = "GEMINI_API_KEY",
     ) -> None:
         api_key = os.getenv(api_key_env)
@@ -34,14 +34,10 @@ class GeminiTextSummarizer:
                 "Please configure your Gemini API key."
             )
 
-        # Client for Gemini Developer API
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
 
     def _build_prompt(self, text: str, style: SummaryStyle) -> str:
-        """
-        Construct prompt for Gemini summarization based on request
-        """
         base_instruction = (
             "You are an expert summarization assistant. "
             "Read the following text and generate a concise, accurate summary.\n\n"
@@ -63,7 +59,6 @@ class GeminiTextSummarizer:
                 "Each bullet should represent one key idea or takeaway."
             )
         else:
-            # default : brief summary
             style_instruction = "Write a short summary focusing on the main idea."
 
         prompt = (
@@ -91,21 +86,28 @@ class GeminiTextSummarizer:
 
         prompt = self._build_prompt(text, style)
 
-        generation_config = {}
-        if max_output_tokens is not None:
-            generation_config["max_output_tokens"] = max_output_tokens
-
         try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                generation_config=generation_config or None,
-            )
+            # generate config only when max_output_tokens is existing
+            if max_output_tokens is not None:
+                config = types.GenerateContentConfig(
+                    max_output_tokens=max_output_tokens,
+                    # can add temperature, top_p etc if needed
+                    # temperature=0.3,
+                )
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config,  
+                )
+            else:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                )
         except Exception as e:
             logger.exception("Gemini summarization request failed")
             raise RuntimeError(f"Gemini summarization failed: {e}") from e
 
-        # access final text with response.text in google-genai SDK
         summary = getattr(response, "text", None)
         if not summary:
             raise RuntimeError("Gemini returned an empty response for summarization.")
