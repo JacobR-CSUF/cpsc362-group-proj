@@ -131,16 +131,20 @@ class TranscribeAndSummarizeResponse(BaseModel):
     response_model=TranscribeAndSummarizeResponse,
     summary="Transcribe + summarize"
 )
-def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest):
+async def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest):
     """
     1) Whisper transcription → text
     2) Gemini summarization → summary
     3) return both
     """
-
     # 1) Transcribe phase
     try:
-        transcribe_result: TranscribeResponse = whisper_service.transcribe(payload)
+        transcribe_dict = await whisper_service.transcribe_from_url(
+            file_url=str(payload.file_url),
+            language=None if payload.language in (None, "", "string") else payload.language,
+        )
+        # dict → Pydantic model
+        transcribe_result = TranscribeResponse(**transcribe_dict)
     except DownloadError as de:
         raise HTTPException(400, f"Failed to download media: {de}")
     except UnsupportedMediaError as ue:
@@ -148,10 +152,8 @@ def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest):
     except Exception as e:
         raise HTTPException(500, f"Unexpected transcription error: {e}")
 
-    transcript_text = getattr(transcribe_result, "text", None) or \
-                      getattr(transcribe_result, "transcript", None)
-
-    if not transcript_text or not transcript_text.strip():
+    transcript_text = (transcribe_result.text or "").strip()
+    if not transcript_text:
         raise HTTPException(500, "Transcription returned empty text; cannot summarize.")
 
     # 2) Summarize phase
@@ -173,7 +175,6 @@ def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest):
         summary=summary_text,
         style=payload.style,
     )
-
 
 @app.post(
     "/emotion/detect",
