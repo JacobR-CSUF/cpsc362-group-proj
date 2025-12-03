@@ -1,12 +1,13 @@
 # apps/ai/app/services/gemini_summarizer.py
 
-import os
 import logging
 from enum import Enum
 from typing import Optional
 
 from google import genai
-from google.genai import types 
+from google.genai import types
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +26,11 @@ class GeminiTextSummarizer:
     def __init__(
         self,
         model_name: str = "gemini-2.5-flash",
-        api_key_env: str = "GEMINI_API_KEY",
     ) -> None:
-        api_key = os.getenv(api_key_env)
+        api_key = settings.GEMINI_API_KEY
         if not api_key:
             raise RuntimeError(
-                f"{api_key_env} environment variable is not set. "
+                "GEMINI_API_KEY is not set in configuration (.env). "
                 "Please configure your Gemini API key."
             )
 
@@ -97,7 +97,7 @@ class GeminiTextSummarizer:
                 response = self.client.models.generate_content(
                     model=self.model_name,
                     contents=prompt,
-                    config=config,  
+                    config=config,
                 )
             else:
                 response = self.client.models.generate_content(

@@ -27,6 +27,10 @@ SUPPORTED_SUFFIXES = {
     ".mpga",
     ".aac",
     ".opus",
+    ".hevc",
+    ".mov",
+    ".mkv",
+    ".avi",
 }
 
 _model = None
