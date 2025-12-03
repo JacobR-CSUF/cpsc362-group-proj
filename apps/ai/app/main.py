@@ -73,11 +73,10 @@ async def moderate_image(
         logging.getLogger(__name__).info("Both file and file_url provided; using uploaded file.")
 
     # 1) load image bytes
-    if file is not None:
-        if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
+        if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"):
             raise HTTPException(
                 status_code=400,
-                detail="Only JPEG, PNG, WebP, and GIF are allowed.",
+                detail="Only JPEG, PNG, WebP, HEIC, HEIF are supported.",
             )
         mime_type = file.content_type
         image_bytes = await file.read()
