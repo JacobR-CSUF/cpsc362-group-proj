@@ -155,13 +155,13 @@ def moderate_image(
 ) -> Dict[str, Any]:
     """
     Production-ready image moderation function.
-    - Size validation & compression
-    - Gemini API call with retry
-    - Apply threshold
-    - Returns is_safe, reason, categories
+    Supports: JPEG, PNG, WebP, HEIC, HEIF (NOT GIF - Gemini limitation)
     """
-    if mime_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
-        raise ModerationError(f"Unsupported image type: {mime_type}")
+    if mime_type not in ("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"):
+        raise ModerationError(
+            f"Unsupported image type: {mime_type}. "
+            "Gemini supports: JPEG, PNG, WebP, HEIC, HEIF only."
+        )
 
     original_size = len(image_bytes)
     image_bytes, compressed = _compress_if_needed(image_bytes)
