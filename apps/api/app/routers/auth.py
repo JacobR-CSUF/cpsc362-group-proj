@@ -11,6 +11,7 @@ import jwt
 from collections import defaultdict
 from typing import Dict
 import time
+import traceback
 
 load_dotenv()
 
@@ -71,12 +72,14 @@ class ErrorResponse(BaseModel):
 
 
 def hash_password(password: str) -> str:
+    """Hash password using bcrypt"""
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
     return hashed.decode('utf-8')
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password against bcrypt hash"""
     return bcrypt.checkpw(
         plain_password.encode('utf-8'),
         hashed_password.encode('utf-8')
@@ -84,6 +87,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def generate_jwt_token(user_id: str, token_type: str = "access") -> str:
+    """Generate JWT token for user authentication"""
     jwt_secret = os.getenv("JWT_SECRET")
     if not jwt_secret:
         raise ValueError("JWT_SECRET not configured")
@@ -103,8 +107,10 @@ def generate_jwt_token(user_id: str, token_type: str = "access") -> str:
 
 
 def check_rate_limit(ip_address: str) -> bool:
+    """Check if IP address has exceeded login rate limit"""
     current_time = time.time()
     attempts = login_attempts[ip_address]
+    
     
     login_attempts[ip_address] = [
         attempt_time for attempt_time in attempts 
@@ -115,6 +121,7 @@ def check_rate_limit(ip_address: str) -> bool:
 
 
 def record_login_attempt(ip_address: str, email: str, success: bool):
+    """Record login attempt for rate limiting and logging"""
     current_time = time.time()
     login_attempts[ip_address].append(current_time)
     
@@ -134,6 +141,13 @@ def record_login_attempt(ip_address: str, email: str, success: bool):
     }
 )
 async def register(request: RegisterRequest):
+    """
+    Register a new user account
+    
+    - **email**: Valid email address
+    - **password**: Must contain uppercase, lowercase, digit, and special character (min 8 chars)
+    - **username**: 3-30 characters, alphanumeric and underscores only
+    """
     user_id = str(uuid.uuid4())
     
     try:
@@ -153,8 +167,9 @@ async def register(request: RegisterRequest):
             )
         
         async with httpx.AsyncClient() as client:
+            # Check if username already exists
             username_check = await client.get(
-                f"{rest_url}/users_profile?username=eq.{request.username}",
+                f"{rest_url}/users?username=eq.{request.username}",
                 headers={
                     "apikey": service_key,
                     "Authorization": f"Bearer {service_key}"
@@ -167,8 +182,9 @@ async def register(request: RegisterRequest):
                     detail="Username already taken"
                 )
             
+            # Check if email already exists
             email_check = await client.get(
-                f"{rest_url}/users_profile?email=eq.{request.email}",
+                f"{rest_url}/users?email=eq.{request.email}",
                 headers={
                     "apikey": service_key,
                     "Authorization": f"Bearer {service_key}"
@@ -181,8 +197,10 @@ async def register(request: RegisterRequest):
                     detail="Email already registered"
                 )
             
+            # Hash password
             hashed_password = hash_password(request.password)
             
+            # Prepare user data
             profile_data = {
                 "id": user_id,
                 "email": request.email,
@@ -190,8 +208,9 @@ async def register(request: RegisterRequest):
                 "password_hash": hashed_password
             }
             
+            # Create user in database
             profile_response = await client.post(
-                f"{rest_url}/users_profile",
+                f"{rest_url}/users",
                 headers={
                     "apikey": service_key,
                     "Authorization": f"Bearer {service_key}",
@@ -229,6 +248,8 @@ async def register(request: RegisterRequest):
     except HTTPException:
         raise
     except Exception as e:
+        error_trace = traceback.format_exc()
+        print(f"Registration error: {error_trace}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Registration failed: {str(e)}"
@@ -247,8 +268,16 @@ async def register(request: RegisterRequest):
     }
 )
 async def login(request: LoginRequest, req: Request):
+    """
+    Login with email and password
+    
+    Returns JWT access token (1 hour) and refresh token (7 days)
+    
+    Rate limited to 5 attempts per 15 minutes per IP address
+    """
     client_ip = req.client.host if req.client else "unknown"
     
+    # Check rate limit
     if not check_rate_limit(client_ip):
         record_login_attempt(client_ip, request.email, False)
         raise HTTPException(
@@ -267,8 +296,9 @@ async def login(request: LoginRequest, req: Request):
             )
         
         async with httpx.AsyncClient() as client:
+            # Get user by email
             user_response = await client.get(
-                f"{rest_url}/users_profile?email=eq.{request.email}",
+                f"{rest_url}/users?email=eq.{request.email}",
                 headers={
                     "apikey": service_key,
                     "Authorization": f"Bearer {service_key}"
@@ -284,6 +314,7 @@ async def login(request: LoginRequest, req: Request):
             
             user_data = user_response.json()[0]
             
+            # Verify password
             if not verify_password(request.password, user_data.get("password_hash", "")):
                 record_login_attempt(client_ip, request.email, False)
                 raise HTTPException(
@@ -291,8 +322,10 @@ async def login(request: LoginRequest, req: Request):
                     detail="Invalid credentials"
                 )
             
+            # Record successful login
             record_login_attempt(client_ip, request.email, True)
             
+            # Generate tokens
             access_token = generate_jwt_token(user_data["id"], "access")
             refresh_token = generate_jwt_token(user_data["id"], "refresh")
             
