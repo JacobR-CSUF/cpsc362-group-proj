@@ -244,11 +244,18 @@ services:
       - ./apps/ai/.env
     environment:
       - WHISPER_MODEL_SIZE=base
-      - SHIELDGEMMA_DEVICE=cpu
+      - SHIELDGEMMA_DEVICE=cuda
       - HF_HOME=/root/.cache/huggingface  # Use same cache for shieldgemma-2b
     volumes:
       - ./apps/ai:/app
       - ai_model_cache:/root/.cache    # Cache for downloaded models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1  # Use 1 GPU (or "all" for all GPUs)
+              capabilities: [gpu]
     command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
     depends_on:
       - api

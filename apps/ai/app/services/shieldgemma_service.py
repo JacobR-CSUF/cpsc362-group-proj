@@ -7,10 +7,7 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
 import torch
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-)
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -39,9 +36,6 @@ class ShieldGemmaError(Exception):
 class ShieldGemmaService:
     """
     Text content moderation using Google's ShieldGemma 2B.
-
-    ShieldGemma uses a chat-based interface with specific control tokens
-    to classify text as safe or unsafe.
     """
 
     _model = None
@@ -51,35 +45,32 @@ class ShieldGemmaService:
     # Safety policy definitions
     POLICIES = {
         SafetyCategory.DANGEROUS_CONTENT: (
-            '"Dangerous Content": AI models should not create content that enables, '
-            'encourages, or excuses the commission of dangerous acts or violent crimes, '
-            'including: (1) Unlawful violence or threats thereof; (2) Promotion or creation '
-            'of weapons; (3) Illegal drug use.'
+            '"Dangerous Content": Content that enables, encourages, or excuses the commission '
+            'of dangerous acts or violent crimes, including: (1) Unlawful violence or threats; '
+            '(2) Promotion or creation of weapons, explosives, or dangerous materials; '
+            '(3) Instructions for self-harm or suicide; (4) Illegal drug use or creation.'
         ),
         SafetyCategory.HARASSMENT: (
-            '"Harassment": AI models should not create content that is malicious, intimidating, '
-            'bullying, or abusive content targeting another individual including: '
-            '(1) Negative or harmful characterizations of individuals based on sensitive attributes; '
-            '(2) Dehumanization of individuals; (3) Threats or incitement to violence.'
+            '"Harassment": Content that is malicious, intimidating, bullying, or abusive '
+            'targeting another individual including: (1) Threats of violence; '
+            '(2) Stalking or intimidation; (3) Degrading or demeaning content.'
         ),
         SafetyCategory.HATE_SPEECH: (
-            '"Hate Speech": AI models should not create content that is hateful toward people '
-            'based on protected characteristics (race, ethnicity, religion, disability, age, '
-            'nationality, veteran status, sexual orientation, gender, gender identity, caste, '
-            'or any other characteristic protected by law), and should not contain slurs.'
+            '"Hate Speech": Content that is hateful toward people based on protected '
+            'characteristics (race, ethnicity, religion, disability, age, nationality, '
+            'veteran status, sexual orientation, gender, gender identity, caste), '
+            'including slurs, dehumanization, or calls for violence.'
         ),
         SafetyCategory.SEXUALLY_EXPLICIT: (
-            '"Sexually Explicit": AI models should not create sexually explicit content including: '
-            '(1) Depictions of graphic sexual activity; (2) Content intended for arousal; '
-            '(3) Descriptions of sexual services (commercial or otherwise).'
+            '"Sexually Explicit": Content including graphic sexual activity, '
+            'pornographic material, or content designed for sexual arousal.'
         ),
     }
 
     @classmethod
     def _load_model(cls):
-        """Load ShieldGemma model and tokenizer"""
+        """Load ShieldGemma model with GPU support"""
         if cls._model is not None:
-            logger.info("Model already loaded")
             return
 
         logger.info("=" * 60)
@@ -89,17 +80,23 @@ class ShieldGemmaService:
         logger.info("=" * 60)
 
         try:
-            # Authenticate with Hugging Face
             import os
+            from huggingface_hub import login
+
             hf_token = os.getenv("HF_TOKEN")
             if hf_token:
-                from huggingface_hub import login
                 login(token=hf_token)
                 logger.info("✅ Authenticated with Hugging Face")
 
             # Set device
-            cls._device = "cpu"
-            logger.info(f"Using device: {cls._device}")
+            if settings.SHIELDGEMMA_DEVICE == "cuda" and torch.cuda.is_available():
+                cls._device = "cuda"
+                logger.info(f"✅ Using GPU: {torch.cuda.get_device_name(0)}")
+                logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
+            else:
+                cls._device = "cpu"
+                if settings.SHIELDGEMMA_DEVICE == "cuda":
+                    logger.warning("⚠️ CUDA requested but not available, falling back to CPU")
 
             # Load tokenizer
             logger.info("Loading tokenizer...")
@@ -108,31 +105,39 @@ class ShieldGemmaService:
                 trust_remote_code=True,
                 token=hf_token
             )
-            logger.info("✅ Tokenizer loaded")
 
-            # Set padding token if not present
             if cls._tokenizer.pad_token is None:
                 cls._tokenizer.pad_token = cls._tokenizer.eos_token
-                logger.info(f"Set pad_token to eos_token: {cls._tokenizer.eos_token}")
 
-            # Load model (this is SLOW - 5-10 minutes on CPU)
-            logger.info("Loading model weights (this takes 5-10 minutes on CPU)...")
-            logger.info("Please be patient...")
+            logger.info(f"✅ Tokenizer loaded (vocab size: {len(cls._tokenizer)})")
 
-            cls._model = AutoModelForCausalLM.from_pretrained(
-                settings.SHIELDGEMMA_MODEL_NAME,
-                torch_dtype=torch.float32,  # Use float32 for CPU
-                low_cpu_mem_usage=True,
-                trust_remote_code=True,
-                token=hf_token
-            )
+            # Load model
+            logger.info(f"Loading model to {cls._device.upper()}...")
 
-            logger.info("Moving model to CPU...")
-            cls._model = cls._model.to(cls._device)
+            if cls._device == "cuda":
+                cls._model = AutoModelForCausalLM.from_pretrained(
+                    settings.SHIELDGEMMA_MODEL_NAME,
+                    torch_dtype=torch.float16,
+                    device_map="auto",
+                    trust_remote_code=True,
+                    token=hf_token
+                )
+            else:
+                cls._model = AutoModelForCausalLM.from_pretrained(
+                    settings.SHIELDGEMMA_MODEL_NAME,
+                    torch_dtype=torch.float32,
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True,
+                    token=hf_token
+                )
+                cls._model = cls._model.to(cls._device)
+
             cls._model.eval()
 
             logger.info("=" * 60)
-            logger.info("✅ SHIELDGEMMA MODEL FULLY LOADED")
+            logger.info("✅ SHIELDGEMMA MODEL LOADED SUCCESSFULLY")
+            if cls._device == "cuda":
+                logger.info(f"GPU Memory Used: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
             logger.info("=" * 60)
 
         except Exception as e:
@@ -140,7 +145,6 @@ class ShieldGemmaService:
             cls._model = None
             cls._tokenizer = None
             raise ShieldGemmaError(f"Model loading failed: {e}")
-
 
     @classmethod
     def _analyze_category(
@@ -150,34 +154,31 @@ class ShieldGemmaService:
     ) -> Tuple[bool, float, str]:
         """
         Analyze text against a specific safety category.
-        Uses ShieldGemma's required prompt format.
 
         Returns:
             Tuple of (is_violation, confidence_score, explanation)
         """
-        # Ensure model is loaded
         cls._load_model()
 
-        # Get policy description
         policy = cls.POLICIES[category]
 
-        # ✅ FIX: Use ShieldGemma's EXACT prompt format
-        # Format from official documentation
+        # ShieldGemma prompt format
         prompt = f"""You are a policy expert trying to help determine whether a user prompt is in violation of the defined safety policies.
 
-    <start_of_turn>
-    Human Question: {text}
-    <end_of_turn>
+<start_of_turn>
+Human Question: {text}
+<end_of_turn>
 
-    Our safety principle is defined in the below:
+Our safety principle is defined in the below:
 
-    * {policy}
+* {policy}
 
-    Does the human question violate the above principle? Your answer must start with 'Yes' or 'No'. And then walk through step by step to be sure we answer correctly.
+Does the human question violate the above principle? Your answer must start with 'Yes' or 'No'. And then walk through step by step to be sure we answer correctly.
 
-    """
+"""
 
-        logger.debug(f"Analyzing {category.value}. Prompt length: {len(prompt)} chars")
+        logger.info(f"Analyzing: {category.value}")
+        logger.debug(f"Text: {text[:100]}...")
 
         # Tokenize
         inputs = cls._tokenizer(
@@ -188,44 +189,154 @@ class ShieldGemmaService:
             padding=True
         ).to(cls._device)
 
-        logger.debug(f"Input tokens: {inputs['input_ids'].shape[1]}")
+        input_length = inputs['input_ids'].shape[1]
+        logger.debug(f"Input tokens: {input_length}")
 
-        # Generate response
         try:
             with torch.no_grad():
                 outputs = cls._model.generate(
                     **inputs,
-                    max_new_tokens=50,
-                    do_sample=False,
-                    temperature=None,
-                    top_p=None,
-                    pad_token_id=cls._tokenizer.pad_token_id or cls._tokenizer.eos_token_id,
-                    eos_token_id=cls._tokenizer.eos_token_id
+                    max_new_tokens=150,
+                    min_new_tokens=5,
+                    do_sample=True,
+                    temperature=0.7,
+                    top_p=0.9,
+                    pad_token_id=cls._tokenizer.pad_token_id,
+                    eos_token_id=cls._tokenizer.eos_token_id,
                 )
         except Exception as e:
             logger.error(f"Generation failed: {e}", exc_info=True)
             raise ShieldGemmaError(f"Text generation failed: {e}")
 
-        # Decode response
-        full_response = cls._tokenizer.decode(outputs[0], skip_special_tokens=True)
+        # Extract only new tokens
+        new_tokens = outputs[0][input_length:]
+        generated_text = cls._tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
-        # Extract only the generated part (after the prompt)
-        generated_text = full_response[len(prompt):].strip()
+        logger.info(f"Generated ({len(generated_text)} chars): {generated_text[:150]}...")
 
-        logger.info(f"{category.value} response: {generated_text[:100]}")
+        if not generated_text:
+            logger.warning("Empty generation, defaulting to safe")
+            return False, 0.15, "Model generated empty response"
 
-        # Parse response
-        # ShieldGemma responds with "Yes" or "No" at the start
-        first_word = generated_text.split()[0].lower() if generated_text else "no"
-        is_violation = first_word == "yes"
-
-        # Calculate confidence
-        if is_violation:
-            confidence = 0.9
-        else:
-            confidence = 0.1
+        # ✅ FIXED: Correct method name
+        is_violation, confidence = cls._parse_response(generated_text)
 
         return is_violation, confidence, generated_text
+
+    @classmethod
+    def _parse_response(cls, response: str) -> Tuple[bool, float]:
+        """
+        Parse ShieldGemma's response to extract violation status and confidence.
+
+        The confidence score represents VIOLATION LIKELIHOOD:
+        - High score (0.7-0.95) = likely violates policy
+        - Low score (0.05-0.3) = likely safe
+
+        Returns:
+            Tuple of (is_violation, violation_likelihood_score)
+        """
+        if not response:
+            logger.warning("Empty response from ShieldGemma, defaulting to safe")
+            return False, 0.15
+
+        response_lower = response.lower().strip()
+
+        # Extract first word (remove punctuation)
+        words = response_lower.split()
+        first_word = words[0].rstrip('.,!?:;') if words else ""
+
+        logger.debug(f"Parsing response, first word: '{first_word}'")
+
+        # Determine violation status and base score
+        is_violation = False
+        base_score = 0.5
+
+        if first_word == "yes":
+            is_violation = True
+            base_score = 0.80  # High score for explicit violation
+        elif first_word == "no":
+            is_violation = False
+            base_score = 0.15  # Low score for explicit safe
+        else:
+            # Fallback: Search for yes/no in first 100 chars
+            first_part = response_lower[:100]
+
+            violation_phrases = [
+                'yes,', 'yes.', 'yes ',
+                'violates', 'violation', 'does violate',
+                'is harmful', 'is dangerous', 'is unsafe'
+            ]
+            safe_phrases = [
+                'no,', 'no.', 'no ',
+                'does not violate', 'no violation',
+                'is safe', 'is not harmful', 'is acceptable'
+            ]
+
+            has_violation = any(phrase in first_part for phrase in violation_phrases)
+            has_safe = any(phrase in first_part for phrase in safe_phrases)
+
+            if has_violation and not has_safe:
+                is_violation = True
+                base_score = 0.65
+            elif has_safe and not has_violation:
+                is_violation = False
+                base_score = 0.25
+            else:
+                logger.warning(f"Ambiguous response format: {response[:80]}")
+                is_violation = False
+                base_score = 0.35
+
+        # Adjust score based on reasoning strength
+        score_adjustment = 0.0
+
+        strong_indicators = [
+            'clearly', 'definitely', 'obviously', 'certainly',
+            'absolutely', 'explicitly', 'directly', 'unambiguously'
+        ]
+        uncertain_indicators = [
+            'might', 'could', 'possibly', 'maybe', 'perhaps',
+            'unclear', 'ambiguous', 'debatable', 'borderline'
+        ]
+        severity_indicators = [
+            'severe', 'serious', 'extreme', 'dangerous',
+            'harmful', 'threatening', 'violent'
+        ]
+
+        for indicator in strong_indicators:
+            if indicator in response_lower:
+                if is_violation:
+                    score_adjustment += 0.05
+                else:
+                    score_adjustment -= 0.05
+
+        for indicator in uncertain_indicators:
+            if indicator in response_lower:
+                if is_violation:
+                    score_adjustment -= 0.08
+                else:
+                    score_adjustment += 0.08
+
+        if is_violation:
+            for indicator in severity_indicators:
+                if indicator in response_lower:
+                    score_adjustment += 0.03
+
+        # Calculate final score
+        final_score = base_score + score_adjustment
+
+        # Clamp to valid range
+        if is_violation:
+            final_score = max(0.55, min(0.95, final_score))  # Violations: 0.55-0.95
+        else:
+            final_score = max(0.05, min(0.40, final_score))  # Safe: 0.05-0.40
+
+        logger.info(
+            f"Parsed: violation={is_violation}, "
+            f"base={base_score:.2f}, adj={score_adjustment:+.2f}, "
+            f"final={final_score:.2f}"
+        )
+
+        return is_violation, round(final_score, 3)
 
     @classmethod
     def moderate_text(
@@ -236,26 +347,12 @@ class ShieldGemmaService:
         """
         Moderate text content against safety categories.
 
-        Args:
-            text: Text content to analyze
-            categories: List of categories to check (default: all)
-
         Returns:
-            {
-                "verdict": "safe" | "warning" | "unsafe",
-                "is_safe": bool,
-                "categories": {
-                    "Dangerous Content": {"violated": bool, "confidence": float},
-                    ...
-                },
-                "flagged_categories": ["category1", "category2"],
-                "explanation": "reason for flagging",
-                "max_violation_score": float
-            }
+            Moderation results dictionary
         """
         if not text or not text.strip():
             return {
-                "verdict": ModerationVerdict.SAFE,
+                "verdict": ModerationVerdict.SAFE.value,
                 "is_safe": True,
                 "categories": {},
                 "flagged_categories": [],
@@ -263,13 +360,11 @@ class ShieldGemmaService:
                 "max_violation_score": 0.0
             }
 
-        # Default to all categories
         if categories is None:
             categories = list(SafetyCategory)
 
         logger.info(f"Moderating text ({len(text)} chars) against {len(categories)} categories")
 
-        # Analyze each category
         category_results = {}
         flagged_categories = []
         explanations = []
@@ -277,32 +372,29 @@ class ShieldGemmaService:
 
         for category in categories:
             try:
-                logger.info(f"Analyzing category: {category.value}")
                 is_violation, confidence, explanation = cls._analyze_category(text, category)
 
                 category_results[category.value] = {
                     "violated": is_violation,
-                    "confidence": confidence
+                    "confidence": round(confidence, 3)
                 }
-
-                logger.info(
-                    f"{category.value}: violated={is_violation}, confidence={confidence:.2f}"
-                )
 
                 if is_violation:
                     flagged_categories.append(category.value)
-                    explanations.append(f"{category.value}: {explanation[:200]}")
+                    explanations.append(f"{category.value}: {explanation[:150]}")
                     max_score = max(max_score, confidence)
 
+                logger.info(f"  {category.value}: violated={is_violation}, confidence={confidence:.3f}")
+
             except Exception as e:
-                logger.error(f"Error analyzing {category.value}: {e}", exc_info=True)
+                logger.error(f"Error analyzing {category.value}: {e}")
                 category_results[category.value] = {
                     "violated": False,
                     "confidence": 0.0,
                     "error": str(e)
                 }
 
-        # Determine overall verdict
+        # Determine verdict
         if max_score >= settings.SHIELDGEMMA_THRESHOLD_UNSAFE:
             verdict = ModerationVerdict.UNSAFE
             is_safe = False
@@ -313,30 +405,33 @@ class ShieldGemmaService:
             verdict = ModerationVerdict.SAFE
             is_safe = True
 
-        explanation = "; ".join(explanations) if explanations else "Content passes all safety checks"
+        final_explanation = "; ".join(explanations) if explanations else "Content passes all safety checks"
 
-        logger.info(f"Moderation verdict: {verdict}, max_score={max_score:.2f}")
+        logger.info(f"Final verdict: {verdict.value}, max_score={max_score:.3f}")
 
         return {
-            "verdict": verdict,
+            "verdict": verdict.value,
             "is_safe": is_safe,
             "categories": category_results,
             "flagged_categories": flagged_categories,
-            "explanation": explanation,
-            "max_violation_score": max_score
+            "explanation": final_explanation,
+            "max_violation_score": round(max_score, 3)
         }
 
 
 # Convenience function
-def moderate_text(text: str, categories: Optional[List[SafetyCategory]] = None) -> Dict[str, Any]:
-    """
-    Moderate text using ShieldGemma.
+def moderate_text(
+    text: str,
+    categories: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """Moderate text using ShieldGemma."""
+    category_enums = None
+    if categories:
+        category_enums = []
+        for cat in categories:
+            try:
+                category_enums.append(SafetyCategory(cat))
+            except ValueError:
+                logger.warning(f"Unknown category: {cat}")
 
-    Args:
-        text: Text to analyze
-        categories: Optional list of categories to check
-
-    Returns:
-        Moderation results dictionary
-    """
-    return ShieldGemmaService.moderate_text(text, categories)
+    return ShieldGemmaService.moderate_text(text, category_enums)

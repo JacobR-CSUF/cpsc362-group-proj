@@ -22,14 +22,15 @@ from app.services.whisper_service import (
 from app.services import whisper_service
 from app.utils.url_resolver import resolve_minio_url
 
-
+# ✅ FIXED: Import the class directly, not the convenience function
 from app.services.shieldgemma_service import (
-    moderate_text as moderate_text_service,
+    ShieldGemmaService,
     SafetyCategory,
     ModerationVerdict,
     ShieldGemmaError
 )
 
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="AI Service",
@@ -48,6 +49,8 @@ async def health_check():
 async def root():
     return {"message": "AI Service is running. See /docs for API documentation."}
 
+
+# ========== IMAGE MODERATION ==========
 
 class ImageModerationResponse(BaseModel):
     is_safe: bool = Field(..., description="True if image is allowed on the platform")
@@ -79,7 +82,7 @@ async def moderate_image(
 
     # If both exist, uploaded file wins
     if file is not None and file_url is not None:
-        logging.getLogger(__name__).info("Both file and file_url provided; using uploaded file.")
+        logger.info("Both file and file_url provided; using uploaded file.")
 
     # 1) load image bytes
     if file is not None:
@@ -97,7 +100,7 @@ async def moderate_image(
                 detail="file_url is required when file is not provided.",
             )
         resolved_url = resolve_minio_url(file_url)
-        logging.getLogger(__name__).info(f"Resolved URL: {file_url} -> {resolved_url}")
+        logger.info(f"Resolved URL: {file_url} -> {resolved_url}")
 
         # download from presigned URL
         async with httpx.AsyncClient(timeout=15) as client_http:
@@ -127,11 +130,10 @@ async def moderate_image(
     return ImageModerationResponse(**result)
 
 
+# ========== TRANSCRIPTION & SUMMARIZATION ==========
 
 class TranscribeAndSummarizeRequest(TranscribeRequest):
-    """
-    Extends TranscribeRequest with summary style field.
-    """
+    """Extends TranscribeRequest with summary style field."""
     style: SummaryStyle = Field(
         default=SummaryStyle.BRIEF,
         description="Summary style: brief, detailed, or bullet_points",
@@ -161,7 +163,6 @@ async def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest):
             file_url=str(payload.file_url),
             language=None if payload.language in (None, "", "string") else payload.language,
         )
-        # dict → Pydantic model
         transcribe_result = TranscribeResponse(**transcribe_dict)
     except DownloadError as de:
         raise HTTPException(400, f"Failed to download media: {de}")
@@ -194,6 +195,30 @@ async def transcribe_and_summarize(payload: TranscribeAndSummarizeRequest):
         style=payload.style,
     )
 
+
+@app.post(
+    "/transcribe",
+    response_model=TranscribeResponse,
+    summary="Transcribe audio/video via Whisper (URL-based)",
+)
+async def transcribe(payload: TranscribeRequest):
+    """Transcribe Service (URL-based)."""
+    try:
+        result = await whisper_service.transcribe_from_url(
+            file_url=str(payload.file_url),
+            language=None if payload.language in (None, "", "string") else payload.language,
+        )
+        return result
+    except UnsupportedMediaError as exc:
+        raise HTTPException(415, str(exc))
+    except DownloadError as exc:
+        raise HTTPException(502, str(exc))
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+# ========== EMOTION DETECTION ==========
+
 @app.post(
     "/emotion/detect",
     summary="Detect emotion from image",
@@ -203,14 +228,12 @@ async def detect_emotion(
     file: UploadFile = File(None),
     file_url: Optional[str] = Query(None),
 ):
-    # --- check input ---
     if file is None and file_url is None:
         raise HTTPException(
             status_code=400,
             detail="Either file or file_url must be provided.",
         )
 
-    # Priority: Use uploaded file
     if file is not None:
         if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
             raise HTTPException(
@@ -220,9 +243,8 @@ async def detect_emotion(
         image_bytes = await file.read()
     else:
         resolved_url = resolve_minio_url(file_url)
-        logging.getLogger(__name__).info(f"Emotion detect - Resolved URL: {file_url} -> {resolved_url}")
+        logger.info(f"Emotion detect - Resolved URL: {file_url} -> {resolved_url}")
 
-        # download from presigned URL
         async with httpx.AsyncClient(timeout=20) as client:
             try:
                 resp = await client.get(resolved_url)
@@ -234,7 +256,6 @@ async def detect_emotion(
                 )
         image_bytes = resp.content
 
-    # --- analyze emotion ---
     try:
         label, score, scores = predict_emotion_from_bytes(image_bytes)
     except Exception as e:
@@ -250,87 +271,100 @@ async def detect_emotion(
     }
 
 
-@app.post(
-    "/transcribe",
-    response_model=TranscribeResponse,
-    summary="Transcribe audio/video via Whisper (URL-based)",
-)
-async def transcribe(payload: TranscribeRequest):
-    """Transcribe Service (URL-based).
-        Insert JSON
-    """
-    try:
-        result = await whisper_service.transcribe_from_url(
-            file_url=str(payload.file_url),
-            language=None if payload.language in (None, "", "string") else payload.language,
-        )
-        return result
-    except UnsupportedMediaError as exc:
-        raise HTTPException(415, str(exc))
-    except DownloadError as exc:
-        raise HTTPException(502, str(exc))
-    except Exception as exc:
-        raise HTTPException(500, str(exc))
-    
+# ========== TEXT MODERATION (ShieldGemma) ==========
+
 class TextModerationRequest(BaseModel):
-    text: str = Field(..., description="Text content to moderate", min_length=1, max_length=10000)
-    categories: Optional[List[SafetyCategory]] = Field(
+    """Request model for text moderation"""
+    text: str = Field(
+        ..., 
+        description="Text content to moderate", 
+        min_length=1, 
+        max_length=10000
+    )
+    categories: Optional[List[str]] = Field(
         None,
-        description="Specific categories to check (default: all)"
+        description="Specific categories to check. Options: 'Dangerous Content', 'Harassment', 'Hate Speech', 'Sexually Explicit'. Default: all categories.",
+        examples=[["Dangerous Content", "Hate Speech"]]
     )
 
+
 class CategoryResult(BaseModel):
-    violated: bool
-    confidence: float
+    """Result for a single category"""
+    violated: bool = Field(..., description="Whether content violates this category")
+    confidence: float = Field(..., description="Confidence score (0.0-1.0)")
+
 
 class TextModerationResponse(BaseModel):
-    verdict: ModerationVerdict
-    is_safe: bool
-    categories: Dict[str, CategoryResult]
-    flagged_categories: List[str]
-    explanation: str
-    max_violation_score: float
+    """Response model for text moderation"""
+    verdict: str = Field(..., description="Overall verdict: safe, warning, or unsafe")
+    is_safe: bool = Field(..., description="True if content passes all safety checks")
+    categories: Dict[str, CategoryResult] = Field(..., description="Results per category")
+    flagged_categories: List[str] = Field(..., description="List of violated categories")
+    explanation: str = Field(..., description="Human-readable explanation")
+    max_violation_score: float = Field(..., description="Highest violation confidence score")
 
-logger = logging.getLogger(__name__)
 
 @app.post(
     "/moderate/text",
     response_model=TextModerationResponse,
     summary="Moderate text content with ShieldGemma",
-    description="Analyzes text against safety categories: Dangerous Content, Harassment, Hate Speech, Sexually Explicit",
+    description="""
+Analyzes text against safety categories using Google's ShieldGemma 2B model.
+
+**Categories:**
+- `Dangerous Content`: Violence, weapons, illegal activities, self-harm
+- `Harassment`: Bullying, threats, intimidation
+- `Hate Speech`: Discriminatory or prejudiced content targeting protected groups
+- `Sexually Explicit`: Pornographic or graphic sexual content
+
+**Verdict Levels:**
+- `safe`: Content passes all checks (score < 0.3)
+- `warning`: Borderline content (score 0.3-0.5)
+- `unsafe`: Content violates policies (score > 0.5)
+    """,
     tags=["moderation"]
 )
 async def moderate_text(request: TextModerationRequest):
     """
     Moderate text content using Google's ShieldGemma 2B model.
-
-    **Categories:**
-    - Dangerous Content: Violence, weapons, illegal activities
-    - Harassment: Bullying, threats, intimidation
-    - Hate Speech: Discriminatory or prejudiced content
-    - Sexually Explicit: Pornographic or graphic sexual content
-
-    **Verdict:**
-    - `safe`: Content passes all checks
-    - `warning`: Borderline content (score 0.3-0.5)
-    - `unsafe`: Content violates policies (score > 0.5)
-
-    **Example Request:**
-    ```json
-    {
-      text: How do I bake a cake?,
-      categories: [Dangerous Content, Hate Speech]
-    }
     """
+    logger.info(f"Text moderation request: {len(request.text)} chars, categories={request.categories}")
+
     try:
-        result = moderate_text_service(
+        # ✅ FIXED: Convert string categories to SafetyCategory enums
+        category_enums = None
+        if request.categories:
+            category_enums = []
+            for cat_str in request.categories:
+                try:
+                    category_enums.append(SafetyCategory(cat_str))
+                except ValueError:
+                    logger.warning(f"Unknown category '{cat_str}', skipping")
+
+            # If all categories were invalid, use all categories
+            if not category_enums:
+                logger.warning("No valid categories provided, using all categories")
+                category_enums = None
+
+        # ✅ FIXED: Call ShieldGemmaService directly with proper types
+        result = ShieldGemmaService.moderate_text(
             text=request.text,
-            categories=request.categories,
+            categories=category_enums
         )
+
+        logger.info(f"Moderation result: verdict={result['verdict']}, max_score={result['max_violation_score']}")
+
         return TextModerationResponse(**result)
 
-    except ShieldGemmaError as e:  # import or define ShieldGemmaError in this module
-        raise HTTPException(status_code=503, detail=f"Moderation service error: {str(e)}")
+    except ShieldGemmaError as e:
+        logger.error(f"ShieldGemma service error: {e}")
+        raise HTTPException(
+            status_code=503, 
+            detail=f"Moderation service error: {str(e)}"
+        )
     except Exception as e:
-        logger.error("Unexpected error in text moderation", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error during moderation")
+        logger.error(f"Unexpected error in text moderation: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail="Internal server error during moderation"
+        )
