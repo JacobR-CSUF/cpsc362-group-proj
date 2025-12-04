@@ -95,7 +95,7 @@ def generate_jwt_token(user_data: dict, token_type: str = "access") -> str:
         raise ValueError("User data with an id is required")
 
     now = datetime.now(timezone.utc)
-    expiration_hours = 1 if token_type == "access" else 168  # 1 hour or 7 days
+    expiration_hours = 3 if token_type == "access" else 168  # 1 hour or 7 days
     expiration = now + timedelta(hours=expiration_hours)
 
     app_role = user_data.get("role", "user")

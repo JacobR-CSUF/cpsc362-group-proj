@@ -193,7 +193,8 @@ async def upload_media(
                 detail="Failed to save media metadata"
             )
 
-        saved_media = response["data"][0] if response.get("data") else media_data
+        # SupabaseClient.insert already returns the inserted row dict
+        saved_media = response if isinstance(response, dict) else media_data
 
         return MediaUploadResponse(
             success=True,

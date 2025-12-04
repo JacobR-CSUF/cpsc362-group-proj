@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, UUID4
 
-from app.services.supabase_client import get_supabase_client
+from app.services.supabase_client import get_rls_client, get_supabase_client
 from app.utils.pagination import (
     PaginatedResponse,
     normalize_page_limit,
@@ -67,9 +67,7 @@ def _rls_client(user_token: str):
     Returns a Supabase client with Row Level Security applied
     for the given user access token.
     """
-    client = get_supabase_client()
-    client.postgrest.auth(user_token)
-    return client
+    return get_rls_client(user_token)
 
 
 def _ensure_post_exists(client, post_id: str):

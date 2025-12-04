@@ -19,6 +19,8 @@ export default function CreatePostModal({
   const [caption, setCaption] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [uploadedMediaId, setUploadedMediaId] = useState<string | null>(null);
+  const [uploadedMediaUrl, setUploadedMediaUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -54,8 +56,8 @@ export default function CreatePostModal({
     const accessToken = localStorage.getItem("accessToken");
 
     if (!accessToken) {
-        setError("User is not logged in (missing token).");
-        return;
+      setError("User is not logged in (missing token).");
+      return;
     }
 
     if (!caption.trim()) {
@@ -67,37 +69,53 @@ export default function CreatePostModal({
     setError(null);
 
     try {
-      let image_url = null;
+      let mediaId = uploadedMediaId;
 
+      // If a new file is selected, upload it first
       if (file) {
         const formData = new FormData();
         formData.append("file", file);
+        formData.append("caption", caption);
 
         const uploadRes = await fetch("http://localhost:8001/api/v1/media/upload", {
           method: "POST",
           credentials: "include",
-          headers: {"Authorization": `Bearer ${accessToken}`},
+          headers: { Authorization: `Bearer ${accessToken}` },
           body: formData,
         });
 
-        if (!uploadRes.ok) throw new Error("Failed to upload image");
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text();
+          throw new Error(`Failed to upload media: ${errText || uploadRes.statusText}`);
+        }
 
         const data = await uploadRes.json();
-        image_url = data.public_url;
+        // API returns { success, data: { id, public_url, ... } }
+        mediaId = data?.data?.id || null;
+        setUploadedMediaId(mediaId);
+        setUploadedMediaUrl(data?.data?.public_url || null);
       }
 
       const postRes = await fetch("http://localhost:8001/api/v1/posts", {
         method: "POST",
         credentials: "include",
-        headers: {"Authorization": `Bearer ${accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ caption, image_url }),
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ caption, media_id: mediaId }),
       });
 
-      if (!postRes.ok) throw new Error("Post creation failed");
+      if (!postRes.ok) {
+        const errText = await postRes.text();
+        throw new Error(`Post creation failed: ${errText || postRes.statusText}`);
+      }
 
       setCaption("");
       setFile(null);
       setPreview(null);
+      setUploadedMediaId(null);
+      setUploadedMediaUrl(null);
 
       onPostCreated();
       onClose();
