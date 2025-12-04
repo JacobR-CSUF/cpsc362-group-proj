@@ -1,9 +1,16 @@
 # apps/api/routes/posts.py
-from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Security
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Security, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, AnyUrl, UUID4
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+from ..utils.pagination import (
+    PaginatedResponse,
+    normalize_page_limit,
+    page_to_range,
+    build_paginated_response,
+)
 
 from ..services.supabase_client import get_supabase_client
 from ..dependencies import get_current_user as require_user
@@ -157,7 +164,6 @@ def create_post(payload: PostCreate, current: AuthUser = Depends(current_auth)):
         "user_id": current.user_id,
         "caption": payload.caption,
         "media_id": str(payload.media_id) if payload.media_id else None,
-        "has_media": bool(payload.media_id),
         "visibility": "public"  # Default visibility
     }
     
@@ -183,10 +189,11 @@ def create_post(payload: PostCreate, current: AuthUser = Depends(current_auth)):
     return _row_to_post(res.data)
 
 
-@router.get("", response_model=List[PostResponse])
+@router.get("", response_model=PaginatedResponse[PostResponse])
 def get_feed(
+    request: Request,
+    page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
     has_media: Optional[bool] = Query(None, description="Filter by media presence"),
     current: AuthUser = Depends(current_auth),
 ):
@@ -198,24 +205,47 @@ def get_feed(
     - Respects RLS and visibility rules
     """
     db = _rls_client(current.access_token)
-    
+
+    # Normalize page + limit
+    page, limit = normalize_page_limit(page, limit)
+    start, end = page_to_range(page, limit)
+
+    # Total count
+    count_q = db.table("posts").select("id", count="exact")
+    if has_media is True:
+        # posts that have media (media_id IS NOT NULL)
+        count_q = count_q.not_.is_("media_id", "null")
+    elif has_media is False:
+        # posts that do NOT have media (media_id IS NULL)
+        count_q = count_q.is_("media_id", "null")
+    count_res = count_q.execute()
+    total_count = int(count_res.count or 0)
+
+    # Fetch paginated rows
     query = (
         db.table("posts")
         .select(SELECT_FIELDS)
         .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
+        .range(start, end)
     )
-    
-    # Apply has_media filter if specified
-    if has_media is not None:
-        query = query.eq("has_media", has_media)
-    
+    if has_media is True:
+        query = query.not_.is_("media_id", "null")
+    elif has_media is False:
+        query = query.is_("media_id", "null")
+
     res = query.execute()
-    
     if getattr(res, "error", None):
         raise HTTPException(status_code=400, detail=res.error.message)
-    
-    return [_row_to_post(r) for r in (res.data or [])]
+
+    posts = [_row_to_post(r) for r in (res.data or [])]
+
+    return build_paginated_response(
+        items=posts,
+        total_count=total_count,
+        page=page,
+        limit=limit,
+        request=request,
+    )
 
 
 @router.get("/{post_id}", response_model=PostResponse)
@@ -241,35 +271,65 @@ def get_post_by_id(post_id: UUID4, current: AuthUser = Depends(current_auth)):
     return _row_to_post(rows[0])
 
 
-@router.get("/user/{user_id}", response_model=List[PostResponse])
+@router.get("/user/{user_id}", response_model=PaginatedResponse[PostResponse])
 def get_posts_by_user(
     user_id: str,
+    request: Request,
+    page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
     has_media: Optional[bool] = Query(None, description="Filter by media presence"),
     current: AuthUser = Depends(current_auth),
 ):
     """Get posts by specific user with optional media filter"""
     db = _rls_client(current.access_token)
-    
+
+    # Normalize + compute range
+    page, limit = normalize_page_limit(page, limit)
+    start, end = page_to_range(page, limit)
+
+    # Total count
+    count_q = (
+        db.table("posts")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+    )
+    if has_media is True:
+        count_q = count_q.not_.is_("media_id", "null")
+    elif has_media is False:
+        count_q = count_q.is_("media_id", "null")
+
+    count_res = count_q.execute()
+    total_count = int(count_res.count or 0)
+
+    # Page slice
     query = (
         db.table("posts")
         .select(SELECT_FIELDS)
         .eq("user_id", user_id)
         .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
+        .range(start, end)
     )
-    
-    # Apply has_media filter if specified
     if has_media is not None:
         query = query.eq("has_media", has_media)
-    
+
+    if has_media is True:
+        query = query.not_.is_("media_id", "null")
+    elif has_media is False:
+        query = query.is_("media_id", "null")
+        
     res = query.execute()
-    
     if getattr(res, "error", None):
         raise HTTPException(status_code=400, detail=res.error.message)
-    
-    return [_row_to_post(r) for r in (res.data or [])]
+
+    posts = [_row_to_post(r) for r in (res.data or [])]
+
+    return build_paginated_response(
+        items=posts,
+        total_count=total_count,
+        page=page,
+        limit=limit,
+        request=request,
+    )
 
 
 @router.put("/{post_id}", response_model=PostResponse)

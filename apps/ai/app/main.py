@@ -20,6 +20,7 @@ from app.services.whisper_service import (
     UnsupportedMediaError,
 )
 from app.services import whisper_service
+from app.utils.url_resolver import resolve_minio_url
 
 
 app = FastAPI(
@@ -54,7 +55,7 @@ class ImageModerationResponse(BaseModel):
     "/moderation/image",
     response_model=ImageModerationResponse,
     summary="Moderate image with Google Gemini",
-    description="Supports file upload or presigned URL. JPEG/PNG/WebP/GIF.",
+    description="Supports file upload or presigned URL. JPEG/PNG/WebP/HEIC/HEIF ONLY.",
 )
 async def moderate_image(
     file: Optional[UploadFile] = File(None),
@@ -74,18 +75,26 @@ async def moderate_image(
 
     # 1) load image bytes
     if file is not None:
-        if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
+        if file.content_type not in ("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"):
             raise HTTPException(
                 status_code=400,
-                detail="Only JPEG, PNG, WebP, and GIF are allowed.",
+                detail="Only JPEG, PNG, WebP, HEIC, HEIF are supported.",
             )
         mime_type = file.content_type
         image_bytes = await file.read()
     else:
+        if file_url is None:
+            raise HTTPException(
+                status_code=400,
+                detail="file_url is required when file is not provided.",
+            )
+        resolved_url = resolve_minio_url(file_url)
+        logging.getLogger(__name__).info(f"Resolved URL: {file_url} -> {resolved_url}")
+
         # download from presigned URL
         async with httpx.AsyncClient(timeout=15) as client_http:
             try:
-                resp = await client_http.get(file_url)
+                resp = await client_http.get(resolved_url)
                 resp.raise_for_status()
             except httpx.HTTPError as e:
                 raise HTTPException(
@@ -108,6 +117,7 @@ async def moderate_image(
         raise HTTPException(500, f"Unexpected error during image moderation: {e}")
 
     return ImageModerationResponse(**result)
+
 
 
 class TranscribeAndSummarizeRequest(TranscribeRequest):
@@ -201,10 +211,13 @@ async def detect_emotion(
             )
         image_bytes = await file.read()
     else:
+        resolved_url = resolve_minio_url(file_url)
+        logging.getLogger(__name__).info(f"Emotion detect - Resolved URL: {file_url} -> {resolved_url}")
+
         # download from presigned URL
         async with httpx.AsyncClient(timeout=20) as client:
             try:
-                resp = await client.get(file_url)
+                resp = await client.get(resolved_url)
                 resp.raise_for_status()
             except Exception as e:
                 raise HTTPException(

@@ -3,7 +3,7 @@ Comments CRUD Endpoints
 Handles comment operations on posts with authentication and authorization
 Implements soft delete pattern with deleted_at timestamp
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from datetime import datetime
@@ -11,6 +11,13 @@ from uuid import UUID
 
 from ..services.supabase_client import get_supabase_client
 from ..dependencies import get_current_user
+from ..utils.pagination import (
+    PaginatedResponse,
+    normalize_page_limit,
+    page_to_range,
+    build_paginated_response,
+)
+
 
 router = APIRouter(prefix="/comments", tags=["comments"])
 
@@ -57,14 +64,14 @@ class CommentResponse(BaseModel):
     updated_at: datetime
 
 
-class CommentsListResponse(BaseModel):
-    """Paginated list of comments"""
-    success: bool
-    data: List[CommentResponse]
-    total: int
-    page: int
-    page_size: int
-    has_next: bool
+# class CommentsListResponse(BaseModel):
+#     """Paginated list of comments"""
+#     success: bool
+#     data: List[CommentResponse]
+#     total: int
+#     page: int
+#     page_size: int
+#     has_next: bool
 
 
 class CommentSingleResponse(BaseModel):
@@ -192,13 +199,16 @@ async def create_comment(
         )
 
 
-@router.get("/posts/{post_id}/comments",
-            response_model=CommentsListResponse,
-            status_code=status.HTTP_200_OK)
+@router.get(
+    "/posts/{post_id}/comments",
+    response_model=PaginatedResponse[CommentResponse],
+    status_code=status.HTTP_200_OK
+)
 async def get_post_comments(
     post_id: str,
+    request: Request,
     page: int = Query(1, ge=1, description="Page number (starts at 1)"),
-    page_size: int = Query(50, ge=1, le=100, description="Number of comments per page")
+    limit: int = Query(20, ge=1, le=100, description="Number of comments per page"),
 ):
     """
     Get all comments for a post (paginated, ordered chronologically)
@@ -206,6 +216,7 @@ async def get_post_comments(
     Public endpoint - no authentication required
     Comments are ordered by created_at ASC (oldest first)
     """
+    # -------- validate post id --------
     try:
         try:
             UUID(post_id)
@@ -214,54 +225,67 @@ async def get_post_comments(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid post ID format"
             )
-        
+
         post = await get_post_by_id(post_id)
         if not post:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Post with ID {post_id} not found"
             )
-        
+
+        # -------- normalize page + limit --------
+        page, limit = normalize_page_limit(page, limit)
+        start, end = page_to_range(page, limit)
+
         client = get_supabase_client()
-        
-        count_response = client.table("comments").select(
-            "id", count="exact"
-        ).eq("post_id", post_id).is_("deleted_at", "null").execute()
-        
-        total_comments = count_response.count if count_response.count else 0
-        
-        offset = (page - 1) * page_size
-        
-        response = client.table("comments").select(
-            "*, users:user_id(id, username, profile_pic)"
-        ).eq("post_id", post_id).is_("deleted_at", "null").order(
-            "created_at", desc=False 
-        ).range(offset, offset + page_size - 1).execute()
-        
+
+        # -------- total count --------
+        count_response = (
+            client
+            .table("comments")
+            .select("id", count="exact")
+            .eq("post_id", post_id)
+            .is_("deleted_at", "null")
+            .execute()
+        )
+
+        total_count = int(count_response.count or 0)
+
+        # -------- fetch paginated slice --------
+        response = (
+            client.table("comments")
+            .select("*, users:user_id(id, username, profile_pic)")
+            .eq("post_id", post_id)
+            .is_("deleted_at", "null")
+            .order("created_at", desc=False)
+            .range(start, end)
+            .execute()
+        )
+
         comments = []
-        for comment in response.data:
-            comments.append(CommentResponse(
-                id=str(comment["id"]),
-                post_id=str(comment["post_id"]),
-                content=comment["content"],
-                author=CommentAuthor(
-                    id=str(comment["users"]["id"]),
-                    username=comment["users"]["username"],
-                    profile_pic=comment["users"].get("profile_pic")
-                ),
-                created_at=comment["created_at"],
-                updated_at=comment["updated_at"]
-            ))
-        
-        has_next = (offset + page_size) < total_comments
-        
-        return CommentsListResponse(
-            success=True,
-            data=comments,
-            total=total_comments,
+        for c in response.data or []:
+            comments.append(
+                CommentResponse(
+                    id=str(c["id"]),
+                    post_id=str(c["post_id"]),
+                    content=c["content"],
+                    author=CommentAuthor(
+                        id=str(c["users"]["id"]),
+                        username=c["users"]["username"],
+                        profile_pic=c["users"].get("profile_pic")
+                    ),
+                    created_at=c["created_at"],
+                    updated_at=c["updated_at"],
+                )
+            )
+
+        # -------- build standard paginated response --------
+        return build_paginated_response(
+            items=comments,
+            total_count=total_count,
             page=page,
-            page_size=page_size,
-            has_next=has_next
+            limit=limit,
+            request=request,
         )
         
     except HTTPException:
