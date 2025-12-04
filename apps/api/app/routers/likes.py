@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, UUID4
 
-from app.services.supabase_client import get_supabase_client
+from app.services.supabase_client import get_rls_client, get_supabase_client
 from app.utils.pagination import (
     PaginatedResponse,
     normalize_page_limit,
@@ -52,10 +52,7 @@ def current_auth(cred: HTTPAuthorizationCredentials = Security(bearer_scheme)) -
         "JWT_SECRET",
         "super-secret-jwt-token-with-at-least-32-characters-long",
     )
-    try:
-        payload = jwt.decode(token, secret, algorithms=["HS256"], audience="authenticated")
-    except jwt.InvalidAudienceError:
-        payload = jwt.decode(token, secret, algorithms=["HS256"])
+    payload = jwt.decode(token, secret, algorithms=["HS256"])
 
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
@@ -70,9 +67,7 @@ def _rls_client(user_token: str):
     Returns a Supabase client with Row Level Security applied
     for the given user access token.
     """
-    client = get_supabase_client()
-    client.postgrest.auth(user_token)
-    return client
+    return get_rls_client(user_token)
 
 
 def _ensure_post_exists(client, post_id: str):

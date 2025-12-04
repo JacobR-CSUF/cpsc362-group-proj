@@ -39,8 +39,7 @@ async def get_current_user(
         payload = jwt.decode(
             token,
             jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated"
+            algorithms=["HS256"]
         )
         
         # Extract user ID from token
