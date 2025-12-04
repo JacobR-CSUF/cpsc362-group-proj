@@ -3,7 +3,7 @@ Comments CRUD Endpoints
 Handles comment operations on posts with authentication and authorization
 Implements soft delete pattern with deleted_at timestamp
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from datetime import datetime

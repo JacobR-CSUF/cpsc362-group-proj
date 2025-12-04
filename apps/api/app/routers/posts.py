@@ -1,5 +1,5 @@
 # apps/api/routes/posts.py
-from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Security
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status, Security, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, AnyUrl, UUID4
 from typing import Optional, List, Dict, Any
@@ -164,7 +164,6 @@ def create_post(payload: PostCreate, current: AuthUser = Depends(current_auth)):
         "user_id": current.user_id,
         "caption": payload.caption,
         "media_id": str(payload.media_id) if payload.media_id else None,
-        "has_media": bool(payload.media_id),
         "visibility": "public"  # Default visibility
     }
     
@@ -212,12 +211,13 @@ def get_feed(
     start, end = page_to_range(page, limit)
 
     # Total count
-    count_q = (
-        db.table("posts")
-        .select("id", count="exact")
-    )
-    if has_media is not None:
-        count_q = count_q.eq("has_media", has_media)
+    count_q = db.table("posts").select("id", count="exact")
+    if has_media is True:
+        # posts that have media (media_id IS NOT NULL)
+        count_q = count_q.not_.is_("media_id", "null")
+    elif has_media is False:
+        # posts that do NOT have media (media_id IS NULL)
+        count_q = count_q.is_("media_id", "null")
     count_res = count_q.execute()
     total_count = int(count_res.count or 0)
 
@@ -228,8 +228,10 @@ def get_feed(
         .order("created_at", desc=True)
         .range(start, end)
     )
-    if has_media is not None:
-        query = query.eq("has_media", has_media)
+    if has_media is True:
+        query = query.not_.is_("media_id", "null")
+    elif has_media is False:
+        query = query.is_("media_id", "null")
 
     res = query.execute()
     if getattr(res, "error", None):
@@ -291,8 +293,10 @@ def get_posts_by_user(
         .select("id", count="exact")
         .eq("user_id", user_id)
     )
-    if has_media is not None:
-        count_q = count_q.eq("has_media", has_media)
+    if has_media is True:
+        count_q = count_q.not_.is_("media_id", "null")
+    elif has_media is False:
+        count_q = count_q.is_("media_id", "null")
 
     count_res = count_q.execute()
     total_count = int(count_res.count or 0)
@@ -308,6 +312,11 @@ def get_posts_by_user(
     if has_media is not None:
         query = query.eq("has_media", has_media)
 
+    if has_media is True:
+        query = query.not_.is_("media_id", "null")
+    elif has_media is False:
+        query = query.is_("media_id", "null")
+        
     res = query.execute()
     if getattr(res, "error", None):
         raise HTTPException(status_code=400, detail=res.error.message)
