@@ -25,3 +25,15 @@ Thumbs.db
 # Logs
 *.log
 
+**/.DS_Store
+**/__pycache__/
+*.pyc
+apps/api/app/__pycache__/__init__.cpython-311.pyc
+apps/api/app/__pycache__/__init__.cpython-313.pyc
+apps/api/app/__pycache__/dependencies.cpython-311.pyc
+apps/api/app/__pycache__/main.cpython-311.pyc
+apps/api/app/routers/__pycache__/__init__.cpython-311.pyc
+apps/api/app/routers/__pycache__/health.cpython-311.pyc
+apps/api/app/routers/__pycache__/users.cpython-311.pyc
+apps/api/app/services/__pycache__/supabase_client.cpython-311.pyc
+apps/api/app/services/__pycache__/supabase_client.cpython-313.pyc
