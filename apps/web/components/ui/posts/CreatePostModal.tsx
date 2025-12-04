@@ -76,7 +76,7 @@ export default function CreatePostModal({
         const uploadRes = await fetch("http://localhost:8001/api/v1/media/upload", {
           method: "POST",
           credentials: "include",
-          headers: {"Authorization": `Bearer ${accessToken}`,},
+          headers: {"Authorization": `Bearer ${accessToken}`},
           body: formData,
         });
 

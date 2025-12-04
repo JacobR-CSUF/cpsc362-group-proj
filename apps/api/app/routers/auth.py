@@ -98,12 +98,16 @@ def generate_jwt_token(user_data: dict, token_type: str = "access") -> str:
     expiration_hours = 1 if token_type == "access" else 168  # 1 hour or 7 days
     expiration = now + timedelta(hours=expiration_hours)
 
+    app_role = user_data.get("role", "user")
     payload = {
         "sub": user_data["id"],
         "username": user_data.get("username", ""),
         "email": user_data.get("email", ""),
         "pfp_url": user_data.get("profile_pic") or user_data.get("pfp_url") or "",
-        "role": user_data.get("role", "user"),
+        # Supabase/PostgREST expects this to map to the database role; keep it as 'authenticated'
+        "role": "authenticated",
+        # App-level role retained separately if provided
+        "app_role": app_role,
         "type": token_type,
         "iat": int(now.timestamp()),
         "exp": int(expiration.timestamp())

@@ -25,7 +25,8 @@ def generate_test_token(
     username: str,
     email: str,
     pfp_url: str = "https://yourcdn.com/pfp.png",
-    role: str = "user",
+    role: str = "authenticated",
+    app_role: str = "user",
     expires_in_hours: int = 24,
     token_type: str = "access",
 ):
@@ -37,7 +38,8 @@ def generate_test_token(
         username: User's username
         email: User's email
         pfp_url: Profile picture URL
-        role: User role
+        role: Supabase/PostgREST role (keep as 'authenticated')
+        app_role: Application-level role (e.g., user/mod/admin)
         expires_in_hours: Token expiration time in hours (default: 24)
         token_type: Token type (access or refresh)
     
@@ -53,6 +55,7 @@ def generate_test_token(
         "email": email,
         "pfp_url": pfp_url,
         "role": role,
+        "app_role": app_role,
         "type": token_type,
         "iat": int(now.timestamp()),  # Issued at (unix time)
         "exp": int((now + timedelta(hours=expires_in_hours)).timestamp())  # Expiration (unix time)
@@ -116,7 +119,8 @@ def main():
         username = input("Username: ").strip()
         email = input("Email: ").strip()
         pfp_url = input("Profile picture URL (optional): ").strip() or "https://yourcdn.com/pfp.png"
-        role = input("Role (default user): ").strip() or "user"
+        role = input("Supabase role (default authenticated): ").strip() or "authenticated"
+        app_role = input("App role (default user): ").strip() or "user"
         token_type = input("Token type (access/refresh, default access): ").strip() or "access"
         hours = input("Expires in hours (default 24): ").strip() or "24"
         
@@ -131,6 +135,7 @@ def main():
                 email,
                 pfp_url,
                 role,
+                app_role,
                 int(hours),
                 token_type if token_type in ["access", "refresh"] else "access"
             )
@@ -206,13 +211,14 @@ def main():
                 user["username"],
                 user["email"],
                 user.get("profile_pic") or "https://yourcdn.com/pfp.png",
+                "authenticated",
                 user.get("role") or "user"
             )
             print(f"User: {user['username']}")
             print(f"UUID: {user['id']}")
             print(f"Email: {user['email']}")
             print(f"PFP: {user.get('profile_pic') or 'https://yourcdn.com/pfp.png'}")
-            print(f"Role: {user.get('role') or 'user'}")
+            print(f"App Role: {user.get('role') or 'user'}")
             print(f"Token: {token}")
             print()
         
@@ -236,13 +242,14 @@ def main():
                         user["username"],
                         user["email"],
                         user.get("profile_pic") or "https://yourcdn.com/pfp.png",
+                        "authenticated",
                         user.get("role") or "user"
                     )
                     f.write(f"User: {user['username']}\n")
                     f.write(f"UUID: {user['id']}\n")
                     f.write(f"Email: {user['email']}\n")
                     f.write(f"PFP: {user.get('profile_pic') or 'https://yourcdn.com/pfp.png'}\n")
-                    f.write(f"Role: {user.get('role') or 'user'}\n")
+                    f.write(f"App Role: {user.get('role') or 'user'}\n")
                     f.write(f"Token: {token}\n\n")
             print(f"\n✅ Tokens saved to: {filename}")
     
