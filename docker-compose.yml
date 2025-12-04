@@ -245,6 +245,7 @@ services:
     environment:
       - WHISPER_MODEL_SIZE=base
       - SHIELDGEMMA_DEVICE=cpu
+      - HF_HOME=/root/.cache/huggingface  # Use same cache for shieldgemma-2b
     volumes:
       - ./apps/ai:/app
       - ai_model_cache:/root/.cache    # Cache for downloaded models

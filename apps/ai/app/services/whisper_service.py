@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import mimetypes
 import os
 import subprocess
@@ -38,6 +39,9 @@ SUPPORTED_SUFFIXES = {
 # Type definition for Whisper transcription result
 WhisperSegment = Dict[str, Any]  # Each segment: {"start": float, "end": float, "text": str, ...}
 WhisperResult = Dict[str, Any]   # Result: {"text": str, "segments": List[WhisperSegment], "language": str}
+
+logger = logging.getLogger(__name__)
+
 
 
 _model = None
@@ -80,56 +84,61 @@ async def _get_model():
     return _model
 
 
+
 def _infer_suffix(url: str, content_type: Optional[str]) -> str:
     """Best-effort suffix detection from URL path, query params, or content-type."""
     parsed = urlparse(url)
 
     # 1) Suffix from path
     suffix = Path(parsed.path).suffix.lower()
+    if suffix in SUPPORTED_SUFFIXES:
+        return suffix
 
-    # 2) Try common query params (e.g., ?prefix=file.mp3)
+    # 2) Try common query params
     if not suffix:
         qs = parse_qs(parsed.query)
-        for key in ("prefix", "filename", "name", "file"):
+        for key in ("prefix", "filename", "name", "file", "key"):  # Added "key" for S3/MinIO
             if key in qs and qs[key]:
                 candidate = Path(qs[key][0]).suffix.lower()
-                if candidate:
-                    suffix = candidate
-                    break
+                if candidate in SUPPORTED_SUFFIXES:
+                    return candidate
 
-    # 3) Use Content-Type header if available
-    if (not suffix or suffix not in SUPPORTED_SUFFIXES) and content_type:
+    # 3) Use Content-Type header
+    if content_type:
         guessed = mimetypes.guess_extension(content_type.split(";")[0].strip())
-        if guessed:
-            suffix = guessed
+        if guessed and guessed in SUPPORTED_SUFFIXES:
+            return guessed
 
-    # 4) Fallback
-    if not suffix or suffix not in SUPPORTED_SUFFIXES:
-        suffix = ".bin"
+    # 4) Fallback - use .mp4 for video, .mp3 for audio, .bin otherwise
+    if content_type:
+        if content_type.startswith("video/"):
+            logger.info(f"No extension found, defaulting to .mp4 for video type")
+            return ".mp4"
+        elif content_type.startswith("audio/"):
+            logger.info(f"No extension found, defaulting to .mp3 for audio type")
+            return ".mp3"
 
-    return suffix
+    logger.warning(f"Could not determine file type for {url}, using .bin")
+    return ".bin"
 
 
-def _probe_duration(path: str) -> Optional[float]:
-    """Return media duration in seconds using ffprobe, or None on failure."""
+
+def _probe_duration(file_path: str) -> Optional[float]:
+    """Use ffprobe to get media duration"""
     try:
-        out = subprocess.check_output(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "json",
-                path,
-            ],
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", 
+             "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", 
+             file_path],
+            capture_output=True,
             text=True,
+            timeout=10
         )
-        data = json.loads(out)
-        return float(data.get("format", {}).get("duration"))
+        if result.returncode == 0:
+            return float(result.stdout.strip())
+        return None  #  Returns None on error
     except Exception:
-        return None
+        return None  #  Swallows errors
 
 
 async def _download_to_temp(url: str) -> Tuple[Path, Optional[str]]:

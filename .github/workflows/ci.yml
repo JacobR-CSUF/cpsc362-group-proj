@@ -62,8 +62,12 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           timeout: 300s
-          envs: GEMINI_API_KEY
+          envs: GEMINI_API_KEY,HF_TOKEN
           script: |
+            set -e
+            set -u
+            set -o pipefail
+
             echo "✅ SSH connection successful!"
             echo "Starting deployment..."
 
@@ -84,6 +88,7 @@ jobs:
             echo "Creating AI service .env file..."
             cat > apps/ai/.env << EOF
             GEMINI_API_KEY=${GEMINI_API_KEY}
+            HF_TOKEN=${HF_TOKEN}
             WHISPER_MODEL_SIZE=base
             SHIELDGEMMA_DEVICE=cpu
             IMAGE_MODERATION_THRESHOLD=strict
@@ -115,6 +120,7 @@ jobs:
             echo "✅ Deployment complete!"
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
       - name: Deployment Summary
         if: always()

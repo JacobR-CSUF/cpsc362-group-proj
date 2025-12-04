@@ -1,7 +1,7 @@
 # /root/apps/ai/app/main.py
 from fastapi import FastAPI, UploadFile, File, HTTPException, status, Query
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Dict, List, Optional
 import httpx
 import logging
 
@@ -23,10 +23,18 @@ from app.services import whisper_service
 from app.utils.url_resolver import resolve_minio_url
 
 
+from app.services.shieldgemma_service import (
+    moderate_text as moderate_text_service,
+    SafetyCategory,
+    ModerationVerdict,
+    ShieldGemmaError
+)
+
+
 app = FastAPI(
     title="AI Service",
     description="AI features: Transcription, Moderation, Summarization",
-    version="1.1.0"
+    version="1.2.0"
 )
 
 
@@ -263,3 +271,66 @@ async def transcribe(payload: TranscribeRequest):
         raise HTTPException(502, str(exc))
     except Exception as exc:
         raise HTTPException(500, str(exc))
+    
+class TextModerationRequest(BaseModel):
+    text: str = Field(..., description="Text content to moderate", min_length=1, max_length=10000)
+    categories: Optional[List[SafetyCategory]] = Field(
+        None,
+        description="Specific categories to check (default: all)"
+    )
+
+class CategoryResult(BaseModel):
+    violated: bool
+    confidence: float
+
+class TextModerationResponse(BaseModel):
+    verdict: ModerationVerdict
+    is_safe: bool
+    categories: Dict[str, CategoryResult]
+    flagged_categories: List[str]
+    explanation: str
+    max_violation_score: float
+
+logger = logging.getLogger(__name__)
+
+@app.post(
+    "/moderate/text",
+    response_model=TextModerationResponse,
+    summary="Moderate text content with ShieldGemma",
+    description="Analyzes text against safety categories: Dangerous Content, Harassment, Hate Speech, Sexually Explicit",
+    tags=["moderation"]
+)
+async def moderate_text(request: TextModerationRequest):
+    """
+    Moderate text content using Google's ShieldGemma 2B model.
+
+    **Categories:**
+    - Dangerous Content: Violence, weapons, illegal activities
+    - Harassment: Bullying, threats, intimidation
+    - Hate Speech: Discriminatory or prejudiced content
+    - Sexually Explicit: Pornographic or graphic sexual content
+
+    **Verdict:**
+    - `safe`: Content passes all checks
+    - `warning`: Borderline content (score 0.3-0.5)
+    - `unsafe`: Content violates policies (score > 0.5)
+
+    **Example Request:**
+    ```json
+    {
+      text: How do I bake a cake?,
+      categories: [Dangerous Content, Hate Speech]
+    }
+    """
+    try:
+        result = moderate_text_service(
+            text=request.text,
+            categories=request.categories,
+        )
+        return TextModerationResponse(**result)
+
+    except ShieldGemmaError as e:  # import or define ShieldGemmaError in this module
+        raise HTTPException(status_code=503, detail=f"Moderation service error: {str(e)}")
+    except Exception as e:
+        logger.error("Unexpected error in text moderation", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error during moderation")
