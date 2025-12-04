@@ -69,14 +69,14 @@ class ShieldGemmaService:
 
     @classmethod
     def _load_model(cls):
-        """Load ShieldGemma model with GPU support"""
+        """Load ShieldGemma model with automatic GPU/CPU detection"""
         if cls._model is not None:
             return
 
         logger.info("=" * 60)
         logger.info("LOADING SHIELDGEMMA MODEL")
         logger.info(f"Model: {settings.SHIELDGEMMA_MODEL_NAME}")
-        logger.info(f"Device: {settings.SHIELDGEMMA_DEVICE}")
+        logger.info(f"Requested device: {settings.SHIELDGEMMA_DEVICE}")
         logger.info("=" * 60)
 
         try:
@@ -88,15 +88,30 @@ class ShieldGemmaService:
                 login(token=hf_token)
                 logger.info("✅ Authenticated with Hugging Face")
 
-            # Set device
-            if settings.SHIELDGEMMA_DEVICE == "cuda" and torch.cuda.is_available():
-                cls._device = "cuda"
+            # ✅ AUTO-DETECT: Determine best available device
+            requested_device = settings.SHIELDGEMMA_DEVICE.lower()
+
+            if requested_device == "auto":
+                if torch.cuda.is_available():
+                    cls._device = "cuda"
+                    logger.info("✅ Auto-detected GPU, using CUDA")
+                else:
+                    cls._device = "cpu"
+                    logger.info("ℹ️ No GPU detected, using CPU")
+            elif requested_device == "cuda":
+                if torch.cuda.is_available():
+                    cls._device = "cuda"
+                else:
+                    logger.warning("⚠️ CUDA requested but not available, falling back to CPU")
+                    cls._device = "cpu"
+            else:
+                cls._device = "cpu"
+
+            if cls._device == "cuda":
                 logger.info(f"✅ Using GPU: {torch.cuda.get_device_name(0)}")
                 logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
             else:
-                cls._device = "cpu"
-                if settings.SHIELDGEMMA_DEVICE == "cuda":
-                    logger.warning("⚠️ CUDA requested but not available, falling back to CPU")
+                logger.info("ℹ️ Running on CPU (slower but compatible)")
 
             # Load tokenizer
             logger.info("Loading tokenizer...")
@@ -111,10 +126,11 @@ class ShieldGemmaService:
 
             logger.info(f"✅ Tokenizer loaded (vocab size: {len(cls._tokenizer)})")
 
-            # Load model
+            # Load model based on device
             logger.info(f"Loading model to {cls._device.upper()}...")
 
             if cls._device == "cuda":
+                # GPU loading - fast!
                 cls._model = AutoModelForCausalLM.from_pretrained(
                     settings.SHIELDGEMMA_MODEL_NAME,
                     torch_dtype=torch.float16,
@@ -123,19 +139,44 @@ class ShieldGemmaService:
                     token=hf_token
                 )
             else:
-                cls._model = AutoModelForCausalLM.from_pretrained(
-                    settings.SHIELDGEMMA_MODEL_NAME,
-                    torch_dtype=torch.float32,
-                    low_cpu_mem_usage=True,
-                    trust_remote_code=True,
-                    token=hf_token
-                )
-                cls._model = cls._model.to(cls._device)
+                # CPU loading - check if 8-bit quantization is enabled
+                load_in_8bit = getattr(settings, 'SHIELDGEMMA_LOAD_IN_8BIT', False)
+
+                if load_in_8bit:
+                    logger.info("Loading with 8-bit quantization for reduced memory...")
+                    try:
+                        cls._model = AutoModelForCausalLM.from_pretrained(
+                            settings.SHIELDGEMMA_MODEL_NAME,
+                            load_in_8bit=True,
+                            device_map="auto",
+                            trust_remote_code=True,
+                            token=hf_token
+                        )
+                    except Exception as e:
+                        logger.warning(f"8-bit loading failed: {e}, falling back to standard loading")
+                        cls._model = AutoModelForCausalLM.from_pretrained(
+                            settings.SHIELDGEMMA_MODEL_NAME,
+                            torch_dtype=torch.float32,
+                            low_cpu_mem_usage=True,
+                            trust_remote_code=True,
+                            token=hf_token
+                        )
+                        cls._model = cls._model.to(cls._device)
+                else:
+                    cls._model = AutoModelForCausalLM.from_pretrained(
+                        settings.SHIELDGEMMA_MODEL_NAME,
+                        torch_dtype=torch.float32,
+                        low_cpu_mem_usage=True,
+                        trust_remote_code=True,
+                        token=hf_token
+                    )
+                    cls._model = cls._model.to(cls._device)
 
             cls._model.eval()
 
             logger.info("=" * 60)
             logger.info("✅ SHIELDGEMMA MODEL LOADED SUCCESSFULLY")
+            logger.info(f"Device: {cls._device.upper()}")
             if cls._device == "cuda":
                 logger.info(f"GPU Memory Used: {torch.cuda.memory_allocated(0) / 1024**3:.2f} GB")
             logger.info("=" * 60)
@@ -145,6 +186,7 @@ class ShieldGemmaService:
             cls._model = None
             cls._tokenizer = None
             raise ShieldGemmaError(f"Model loading failed: {e}")
+
 
     @classmethod
     def _analyze_category(

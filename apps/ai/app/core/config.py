@@ -1,6 +1,6 @@
 # apps/ai/app/core/config.py
 from pydantic_settings import BaseSettings
-from typing import Literal
+from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     # ShieldGemma Settings (Local Text Moderation)
     # ============================================
     SHIELDGEMMA_MODEL_NAME: str = "google/shieldgemma-2b"
-    SHIELDGEMMA_DEVICE: Literal["cpu", "cuda"] = "cpu"
-    SHIELDGEMMA_LOAD_IN_8BIT: bool = True  # Reduce memory usage
+    SHIELDGEMMA_DEVICE: str = "auto"  # default detection of cpu or cuda
+    SHIELDGEMMA_LOAD_IN_8BIT: bool = True
     SHIELDGEMMA_MAX_LENGTH: int = 512  # Max input tokens
 
     # Safety thresholds (0.0 to 1.0, higher = stricter)
