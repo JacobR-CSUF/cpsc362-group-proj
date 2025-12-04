@@ -6,7 +6,7 @@ import jwt
 import os
 import sys
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 # Add project root to Python path
@@ -20,7 +20,15 @@ load_dotenv(dotenv_path)
 from apps.api.app.services.supabase_client import get_supabase_client
 
 
-def generate_test_token(user_id: str, username: str, email: str, expires_in_hours: int = 24):
+def generate_test_token(
+    user_id: str,
+    username: str,
+    email: str,
+    pfp_url: str = "https://yourcdn.com/pfp.png",
+    role: str = "user",
+    expires_in_hours: int = 24,
+    token_type: str = "access",
+):
     """
     Generate a test JWT token for a user
     
@@ -28,24 +36,28 @@ def generate_test_token(user_id: str, username: str, email: str, expires_in_hour
         user_id: User's UUID (string format)
         username: User's username
         email: User's email
+        pfp_url: Profile picture URL
+        role: User role
         expires_in_hours: Token expiration time in hours (default: 24)
+        token_type: Token type (access or refresh)
     
     Returns:
         str: JWT token
     """
     jwt_secret = os.getenv("JWT_SECRET", "super-secret-jwt-token-with-at-least-32-characters-long")
-    
-    # Token payload
+
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),  # Subject (user UUID)
         "username": username,
         "email": email,
-        "aud": "authenticated",  # Audience
-        "iss": "supabase",  # Issuer
-        "iat": datetime.utcnow(),  # Issued at
-        "exp": datetime.utcnow() + timedelta(hours=expires_in_hours)  # Expiration
+        "pfp_url": pfp_url,
+        "role": role,
+        "type": token_type,
+        "iat": int(now.timestamp()),  # Issued at (unix time)
+        "exp": int((now + timedelta(hours=expires_in_hours)).timestamp())  # Expiration (unix time)
     }
-    
+
     # Generate token
     token = jwt.encode(payload, jwt_secret, algorithm="HS256")
     
@@ -65,7 +77,7 @@ def decode_token(token: str):
     jwt_secret = os.getenv("JWT_SECRET", "super-secret-jwt-token-with-at-least-32-characters-long")
     
     try:
-        payload = jwt.decode(token, jwt_secret, algorithms=["HS256"], audience="authenticated")
+        payload = jwt.decode(token, jwt_secret, algorithms=["HS256"])
         return payload
     except jwt.ExpiredSignatureError:
         return {"error": "Token has expired"}
@@ -103,6 +115,9 @@ def main():
         user_id = input("User UUID (e.g., 550e8400-e29b-41d4-a716-446655440000): ").strip()
         username = input("Username: ").strip()
         email = input("Email: ").strip()
+        pfp_url = input("Profile picture URL (optional): ").strip() or "https://yourcdn.com/pfp.png"
+        role = input("Role (default user): ").strip() or "user"
+        token_type = input("Token type (access/refresh, default access): ").strip() or "access"
         hours = input("Expires in hours (default 24): ").strip() or "24"
         
         if not user_id or not username or not email:
@@ -110,7 +125,15 @@ def main():
             return
         
         try:
-            token = generate_test_token(user_id, username, email, int(hours))
+            token = generate_test_token(
+                user_id,
+                username,
+                email,
+                pfp_url,
+                role,
+                int(hours),
+                token_type if token_type in ["access", "refresh"] else "access"
+            )
             
             print("\n" + "="*60)
             print("  Generated Token")
@@ -178,10 +201,18 @@ def main():
         print("="*60 + "\n")
         
         for user in users:
-            token = generate_test_token(user["id"], user["username"], user["email"])
+            token = generate_test_token(
+                user["id"],
+                user["username"],
+                user["email"],
+                user.get("profile_pic") or "https://yourcdn.com/pfp.png",
+                user.get("role") or "user"
+            )
             print(f"User: {user['username']}")
             print(f"UUID: {user['id']}")
             print(f"Email: {user['email']}")
+            print(f"PFP: {user.get('profile_pic') or 'https://yourcdn.com/pfp.png'}")
+            print(f"Role: {user.get('role') or 'user'}")
             print(f"Token: {token}")
             print()
         
@@ -200,10 +231,18 @@ def main():
                 f.write("Test User JWT Tokens\n")
                 f.write("="*60 + "\n\n")
                 for user in users:
-                    token = generate_test_token(user["id"], user["username"], user["email"])
+                    token = generate_test_token(
+                        user["id"],
+                        user["username"],
+                        user["email"],
+                        user.get("profile_pic") or "https://yourcdn.com/pfp.png",
+                        user.get("role") or "user"
+                    )
                     f.write(f"User: {user['username']}\n")
                     f.write(f"UUID: {user['id']}\n")
                     f.write(f"Email: {user['email']}\n")
+                    f.write(f"PFP: {user.get('profile_pic') or 'https://yourcdn.com/pfp.png'}\n")
+                    f.write(f"Role: {user.get('role') or 'user'}\n")
                     f.write(f"Token: {token}\n\n")
             print(f"\n✅ Tokens saved to: {filename}")
     

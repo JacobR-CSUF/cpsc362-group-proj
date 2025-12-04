@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Request
 from pydantic import BaseModel, EmailStr, Field, validator
 import re
 import bcrypt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 from dotenv import load_dotenv
 import httpx
@@ -86,22 +86,29 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     )
 
 
-def generate_jwt_token(user_id: str, token_type: str = "access") -> str:
+def generate_jwt_token(user_data: dict, token_type: str = "access") -> str:
     """Generate JWT token for user authentication"""
     jwt_secret = os.getenv("JWT_SECRET")
     if not jwt_secret:
         raise ValueError("JWT_SECRET not configured")
-    
+    if not user_data or "id" not in user_data:
+        raise ValueError("User data with an id is required")
+
+    now = datetime.now(timezone.utc)
     expiration_hours = 1 if token_type == "access" else 168  # 1 hour or 7 days
-    expiration = datetime.utcnow() + timedelta(hours=expiration_hours)
-    
+    expiration = now + timedelta(hours=expiration_hours)
+
     payload = {
-        "user_id": user_id,
+        "sub": user_data["id"],
+        "username": user_data.get("username", ""),
+        "email": user_data.get("email", ""),
+        "pfp_url": user_data.get("profile_pic") or user_data.get("pfp_url") or "",
+        "role": user_data.get("role", "user"),
         "type": token_type,
-        "exp": expiration,
-        "iat": datetime.utcnow()
+        "iat": int(now.timestamp()),
+        "exp": int(expiration.timestamp())
     }
-    
+
     token = jwt.encode(payload, jwt_secret, algorithm="HS256")
     return token
 
@@ -166,7 +173,7 @@ async def register(request: RegisterRequest):
                 detail="SUPABASE_SERVICE_ROLE_KEY environment variable not set"
             )
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=False) as client:
             # Check if username already exists
             username_check = await client.get(
                 f"{rest_url}/users?username=eq.{request.username}",
@@ -295,7 +302,7 @@ async def login(request: LoginRequest, req: Request):
                 detail="Server configuration error"
             )
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=False) as client:
             # Get user by email
             user_response = await client.get(
                 f"{rest_url}/users?email=eq.{request.email}",
@@ -326,8 +333,8 @@ async def login(request: LoginRequest, req: Request):
             record_login_attempt(client_ip, request.email, True)
             
             # Generate tokens
-            access_token = generate_jwt_token(user_data["id"], "access")
-            refresh_token = generate_jwt_token(user_data["id"], "refresh")
+            access_token = generate_jwt_token(user_data, "access")
+            refresh_token = generate_jwt_token(user_data, "refresh")
             
             return LoginResponse(
                 access_token=access_token,
