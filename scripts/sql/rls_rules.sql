@@ -3,6 +3,16 @@
 -- =====================================================
 -- Complete RLS implementation for all database tables
 -- Run this in your Supabase SQL Editor
+-- NOTE: Ensure base privileges for the "authenticated" role exist; Supabase usually
+-- seeds these, but if you see "permission denied for schema public", run the GRANTs
+-- below before (re)applying policies.
+--
+-- Base privileges (safe to re-run):
+  -- GRANT USAGE ON SCHEMA public TO authenticated;
+  -- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+  -- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+  -- ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+  -- ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO authenticated;
 
 -- =====================================================
 -- 1. ENABLE RLS ON ALL TABLES
@@ -247,6 +257,16 @@ WITH CHECK (auth.jwt()->>'role' = 'service_role');
 CREATE POLICY "Dismiss own suggestions"
 ON public.friend_suggestions FOR DELETE
 USING (auth.uid() = user_id);
+
+-- =====================================================
+-- 10. Enable Base Privileges
+-- =====================================================
+
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO authenticated;
 
 -- =====================================================
 -- VERIFICATION
