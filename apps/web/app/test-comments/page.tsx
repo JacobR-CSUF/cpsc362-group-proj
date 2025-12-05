@@ -51,6 +51,8 @@ export default function TestCommentsPage() {
     loading: commentsLoading,
     error: commentsError,
     addComment,
+    deleteComment,
+    currentUserId,
     refetch: refetchComments,
   } = useComments(postId);
 
@@ -62,7 +64,7 @@ export default function TestCommentsPage() {
       setPostLoading(true);
       setPostError(null);
       try {
-        const accessToken = localStorage.getItem("accessToken");
+        const accessToken = localStorage.getItem("access_token");
         const res = await fetch(`${API_BASE}/api/v1/posts/${postId}`, {
           method: "GET",
           headers: {
@@ -213,7 +215,9 @@ export default function TestCommentsPage() {
         comments={comments}
         loading={commentsLoading}
         error={commentsError}
-        addComment={addComment}
+        addComment={addComment}    
+        deleteComment={deleteComment}
+        currentUserId={currentUserId}
       />
 
       {/* Media viewer modal */}
