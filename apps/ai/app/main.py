@@ -3,6 +3,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 from datetime import datetime
+import time
 import httpx
 import logging
 
@@ -14,11 +15,15 @@ from app.services.ai_pipeline import (
     VideoPipelineResponse,
     ImagePipelineResponse,
     PipelineJobStatus,
+    PipelineStatus,
+    PipelineVerdict,
+    StageResult,
     get_job_status,
     store_job,
 )
 from uuid import uuid4
 import asyncio
+from urllib.parse import urlparse
 
 
 from app.services.gemini_moderation import (
@@ -416,6 +421,61 @@ async def process_video(request: VideoPipelineRequest):
     Process video through transcription → moderation → summarization pipeline.
     """
     logger.info(f"Video pipeline request: {request.file_url}")
+
+    parsed = urlparse(str(request.file_url))
+    is_gif = parsed.path.lower().endswith(".gif")
+
+    if is_gif:
+        logger.info("GIF detected; routing through image moderation pipeline.")
+        pipeline_start = datetime.utcnow()
+        start_time = time.time()
+        try:
+            img_result = await ImagePipelineService.process(
+                ImagePipelineRequest(
+                    file_url=request.file_url, safety_level=SafetyLevel.MODERATE
+                )
+            )
+        except Exception as e:
+            logger.error(f"GIF moderation failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500, detail=f"GIF moderation failed: {str(e)}"
+            )
+
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        stage = StageResult(
+            stage="gif_image_moderation",
+            status=PipelineStatus.COMPLETED
+            if img_result.is_safe
+            else PipelineStatus.FAILED,
+            started_at=pipeline_start,
+            completed_at=datetime.utcnow(),
+            duration_ms=duration_ms,
+            data={
+                "moderation": img_result.moderation.model_dump()
+                if img_result.moderation
+                else None
+            },
+            error=None if img_result.is_safe else "Image failed moderation",
+        )
+
+        verdict = PipelineVerdict.SAFE if img_result.is_safe else PipelineVerdict.UNSAFE
+
+        return VideoPipelineResponse(
+            pipeline="video",
+            file_url=str(request.file_url),
+            verdict=verdict,
+            is_safe=img_result.is_safe,
+            processing_time_ms=duration_ms,
+            started_at=pipeline_start,
+            completed_at=datetime.utcnow(),
+            stages=[stage],
+            transcription=None,
+            text_moderation=None,
+            summary=None,
+            short_circuited=True,
+            short_circuit_reason="GIF content routed through image moderation",
+        )
 
     try:
         result = await VideoPipelineService.process(request)

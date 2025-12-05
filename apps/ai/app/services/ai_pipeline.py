@@ -10,7 +10,9 @@ import time
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from io import BytesIO
 from pydantic import BaseModel, Field, HttpUrl
+from PIL import Image
 
 # Import existing services
 from app.services.whisper_service import (
@@ -542,6 +544,40 @@ class ImagePipelineService:
 
             image_bytes = resp.content
             mime_type = resp.headers.get("content-type", "image/jpeg")
+
+            # Convert GIF to PNG (first frame) so moderation accepts it.
+            if mime_type.lower().startswith("image/gif"):
+                try:
+                    with Image.open(BytesIO(image_bytes)) as im:
+                        im.seek(0)
+                        buf = BytesIO()
+                        im.convert("RGB").save(buf, format="PNG")
+                        image_bytes = buf.getvalue()
+                        mime_type = "image/png"
+                        logger.info("Converted GIF to PNG (first frame) for moderation.")
+                except Exception as e:
+                    stage_duration = int((time.time() - stage_start) * 1000)
+                    stages.append(StageResult(
+                        stage="download",
+                        status=PipelineStatus.FAILED,
+                        started_at=stage_started_at,
+                        completed_at=datetime.utcnow(),
+                        duration_ms=stage_duration,
+                        error=f"GIF conversion failed: {e}",
+                    ))
+                    overall_verdict = PipelineVerdict.ERROR
+                    is_safe = False
+                    return ImagePipelineResponse(
+                        pipeline="image",
+                        file_url=file_url,
+                        verdict=overall_verdict,
+                        is_safe=is_safe,
+                        processing_time_ms=int((time.time() - start_time) * 1000),
+                        started_at=pipeline_start,
+                        completed_at=datetime.utcnow(),
+                        stages=stages,
+                        moderation=None,
+                    )
 
             stage_duration = int((time.time() - stage_start) * 1000)
 
