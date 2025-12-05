@@ -2,8 +2,24 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
+from datetime import datetime
 import httpx
 import logging
+
+from app.services.ai_pipeline import (
+    VideoPipelineService,
+    ImagePipelineService,
+    VideoPipelineRequest,
+    ImagePipelineRequest,
+    VideoPipelineResponse,
+    ImagePipelineResponse,
+    PipelineJobStatus,
+    get_job_status,
+    store_job,
+)
+from uuid import uuid4
+import asyncio
+
 
 from app.services.gemini_moderation import (
     moderate_image as moderate_image_service,
@@ -22,7 +38,6 @@ from app.services.whisper_service import (
 from app.services import whisper_service
 from app.utils.url_resolver import resolve_minio_url
 
-# ✅ FIXED: Import the class directly, not the convenience function
 from app.services.shieldgemma_service import (
     ShieldGemmaService,
     SafetyCategory,
@@ -368,3 +383,146 @@ async def moderate_text(request: TextModerationRequest):
             status_code=500, 
             detail="Internal server error during moderation"
         )
+
+# ========== AI PIPELINES ==========
+@app.post(
+    "/process-video",
+    response_model=VideoPipelineResponse,
+    summary="Process video through full AI pipeline",
+    description="""
+**Complete Video Processing Pipeline**
+
+Processes video/audio through all AI stages:
+
+1. **Transcription** (Whisper) - Converts audio to text
+2. **Text Moderation** (ShieldGemma) - Checks transcript for policy violations
+3. **Summarization** (Gemini) - Generates summary (only if content is safe)
+
+**Short-Circuit Behavior:**
+- If transcription fails → Pipeline stops, returns error
+- If content is UNSAFE → Summarization is skipped, returns transcript + moderation result
+- If content is SAFE → Full pipeline completes with transcript + summary
+
+**Response includes:**
+- Stage-by-stage results with timing
+- Full transcript (if transcription succeeded)
+- Moderation verdict with flagged categories
+- Summary (only if content passed moderation)
+    """,
+    tags=["pipeline"]
+)
+async def process_video(request: VideoPipelineRequest):
+    """
+    Process video through transcription → moderation → summarization pipeline.
+    """
+    logger.info(f"Video pipeline request: {request.file_url}")
+
+    try:
+        result = await VideoPipelineService.process(request)
+        return result
+    except Exception as e:
+        logger.error(f"Video pipeline failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Pipeline processing failed: {str(e)}"
+        )
+
+
+@app.post(
+    "/process-image",
+    response_model=ImagePipelineResponse,
+    summary="Process image through moderation pipeline",
+    description="""
+**Image Safety Check Pipeline**
+
+Processes image through content moderation:
+
+1. **Download** - Fetches image from presigned URL
+2. **Image Moderation** (Gemini) - Analyzes for policy violations
+
+**Safety Levels:**
+- `strict` - Flags mild content as unsafe
+- `moderate` - Default, balanced approach
+- `lenient` - Only flags severe violations
+
+**Supported formats:** JPEG, PNG, WebP, HEIC, HEIF
+    """,
+    tags=["pipeline"]
+)
+async def process_image(request: ImagePipelineRequest):
+    """
+    Process image through moderation pipeline.
+    """
+    logger.info(f"Image pipeline request: {request.file_url}")
+
+    try:
+        result = await ImagePipelineService.process(request)
+        return result
+    except Exception as e:
+        logger.error(f"Image pipeline failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Pipeline processing failed: {str(e)}"
+        )
+
+
+@app.post(
+    "/process-video/async",
+    response_model=PipelineJobStatus,
+    summary="Start async video processing (for large files)",
+    description="Starts background processing and returns a job ID to poll for results.",
+    tags=["pipeline"]
+)
+async def process_video_async(request: VideoPipelineRequest):
+    """
+    Start async video processing for large files.
+    Returns a job_id to poll for status.
+    """
+    job_id = str(uuid4())
+
+    job = PipelineJobStatus(
+        job_id=job_id,
+        status="pending",
+        pipeline_type="video",
+        created_at=datetime.utcnow()
+    )
+    store_job(job)
+
+    # Start background task
+    async def run_pipeline():
+        try:
+            job.status = "processing"
+            store_job(job)
+
+            result = await VideoPipelineService.process(request)
+
+            job.status = "completed"
+            job.completed_at = datetime.utcnow()
+            job.result = result.model_dump()
+            store_job(job)
+
+        except Exception as e:
+            job.status = "failed"
+            job.completed_at = datetime.utcnow()
+            job.error = str(e)
+            store_job(job)
+
+    asyncio.create_task(run_pipeline())
+
+    return job
+
+
+@app.get(
+    "/pipeline/status/{job_id}",
+    response_model=PipelineJobStatus,
+    summary="Check async pipeline job status",
+    tags=["pipeline"]
+)
+async def get_pipeline_status(job_id: str):
+    """
+    Check the status of an async pipeline job.
+    """
+    job = get_job_status(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
