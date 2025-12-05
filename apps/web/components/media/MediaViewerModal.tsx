@@ -82,11 +82,13 @@ export function MediaViewerModal({
 
   function handleTouchMove(e: React.TouchEvent) {
     if (e.touches.length === 2 && pinchData.current.active) {
-      e.preventDefault();
-      const dist = getDistance(e.touches[0], e.touches[1]);
-      const ratio = dist / pinchData.current.startDistance;
-      const newScale = pinchData.current.startScale * ratio;
-      setScale(Math.min(Math.max(0.5, newScale), 5));
+        e.preventDefault();
+        const t1 = e.touches[0] as unknown as Touch;
+        const t2 = e.touches[1] as unknown as Touch;
+        const dist = getDistance(t1, t2);
+        const ratio = dist / pinchData.current.startDistance;
+        const newScale = pinchData.current.startScale * ratio;
+        setScale(Math.min(Math.max(0.5, newScale), 5));
     }
   }
 
