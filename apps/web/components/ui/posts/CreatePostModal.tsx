@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { MediaViewerModal } from "@/components/media/MediaViewerModal";
 
 interface CreatePostModalProps {
   isOpen: boolean;
@@ -26,6 +27,12 @@ export default function CreatePostModal({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [mounted, setMounted] = useState(false);
+
+  // MediaModal
+  const [mediaModalOpen, setMediaModalOpen] = useState(false);
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [mediaType, setMediaType] = useState<"image" | "video" | null>(null);
+
 
   // Avoid SSR/client mismatches for any browser-only APIs used in this modal
   useEffect(() => {
@@ -58,7 +65,7 @@ export default function CreatePostModal({
   };
 
   const handleSubmit = async () => {
-    const accessToken = localStorage.getItem("accessToken");
+    const accessToken = localStorage.getItem("access_token");
 
     if (!accessToken) {
       setError("User is not logged in (missing token).");
@@ -162,14 +169,58 @@ export default function CreatePostModal({
               <p className="mt-4 text-gray-500">Click to upload</p>
             </div>
           ) : (
-            <div className="relative">
-              <img
-                src={preview}
-                className="w-full max-h-[420px] rounded-xl object-cover border-2 border-black"
+            <div
+              className="relative mb-3 overflow-hidden rounded-[10px] border border-black/10 bg-black/5 cursor-pointer"
+              onClick={() => {
+                setMediaUrl(preview!);
+                setMediaType(file?.type.startsWith("video/") ? "video" : "image");
+                setMediaModalOpen(true);
+              }}
+            >
+              {/* IMAGE or VIDEO PREVIEW */}
+              {file?.type.startsWith("video/") ? (
+                <div className="relative">
+                  <video
+                    src={preview}
+                    className="max-h-[420px] w-full object-cover"
+                    muted
+                    loop
+                    playsInline
+                    controls
+                  />
+                  {/* Overlay to block play/pause clicks but still open modal */}
+                  <div
+                    className="absolute inset-0 cursor-pointer"
+                    onClick={() => {
+                      setMediaUrl(preview);
+                      setMediaType("video");
+                      setMediaModalOpen(true);
+                    }}
+                  />
+                </div>
+              ) : (
+                <img
+                  src={preview}
+                  className="max-h-[420px] w-full object-cover select-none cursor-pointer"
+                  onClick={() => {
+                    setMediaUrl(preview);
+                    setMediaType("image");
+                    setMediaModalOpen(true);
+                  }}
+                />
+              )}
+              <MediaViewerModal
+                isOpen={mediaModalOpen}
+                onClose={() => setMediaModalOpen(false)}
+                mediaUrl={mediaUrl}
+                mediaType={mediaType}
               />
+
+              {/* CLEAR BUTTON */}
               <button
-                className="absolute right-2 top-2 rounded-full bg-white px-3 py-1 shadow"
-                onClick={() => {
+                className="absolute right-2 top-2 z-10 rounded-full bg-white/80 px-3 py-1 text-black shadow hover:bg-white"
+                onClick={(e) => {
+                  e.stopPropagation(); // prevent modal from opening
                   setPreview(null);
                   setFile(null);
                 }}
@@ -209,7 +260,7 @@ export default function CreatePostModal({
         <button
           onClick={handleSubmit}
           disabled={loading}
-          className="w-full rounded-2xl bg-[#00D9FF] py-3 text-center text-2xl font-bold tracking-[0.7em] text-white shadow-md hover:brightness-105 disabled:opacity-50"
+          className="w-full rounded-2xl bg-[#000000] py-3 text-center text-2xl font-bold tracking-[0.7em] text-white shadow-md hover:brightness-105 disabled:opacity-50"
         >
           {loading ? "POSTING..." : "SEND"}
         </button>
