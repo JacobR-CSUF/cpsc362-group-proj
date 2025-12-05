@@ -23,6 +23,7 @@ class SupabaseClient:
     
     _instance: Optional[Client] = None
     _initialized: bool = False
+    _service_key: Optional[str] = None
 
     @classmethod
     def get_client(cls) -> Client:
@@ -37,6 +38,9 @@ class SupabaseClient:
         """
         if cls._instance is None:
             cls._instance = cls._initialize_client()
+        # Reset auth to service role to avoid leaking RLS user tokens across requests
+        if cls._service_key and hasattr(cls._instance, "postgrest"):
+            cls._instance.postgrest.auth(cls._service_key)
         return cls._instance
 
     @classmethod
@@ -54,7 +58,8 @@ class SupabaseClient:
             raise ValueError(
                 "Missing required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY"
             )
-        
+
+        cls._service_key = supabase_key
         client = create_client(supabase_url, supabase_key)
         cls._initialized = True
         return client
@@ -183,3 +188,19 @@ def get_supabase_client() -> Client:
         Client: Supabase client
     """
     return SupabaseClient.get_client()
+
+
+def get_rls_client(user_token: str) -> Client:
+    """
+    Get a fresh Supabase client authorized with a user's JWT for RLS operations.
+    This avoids mutating the singleton service client.
+    """
+    supabase_url = os.getenv("SUPABASE_URL")
+    anon_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+    if not supabase_url or not anon_key:
+        raise ValueError("Missing SUPABASE_URL or SUPABASE_ANON_KEY/SUPABASE_SERVICE_ROLE_KEY")
+
+    client = create_client(supabase_url, anon_key)
+    client.postgrest.auth(user_token)
+    return client

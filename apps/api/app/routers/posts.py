@@ -12,7 +12,7 @@ from ..utils.pagination import (
     build_paginated_response,
 )
 
-from ..services.supabase_client import get_supabase_client
+from ..services.supabase_client import get_supabase_client, get_rls_client
 from ..dependencies import get_current_user as require_user
 
 router = APIRouter(prefix="/posts", tags=["Posts"])
@@ -107,9 +107,7 @@ def _row_to_post(row: Dict[str, Any]) -> PostResponse:
 
 def _rls_client(user_token: str):
     """Get Supabase client with RLS using user token"""
-    client = get_supabase_client()
-    client.postgrest.auth(user_token)
-    return client
+    return get_rls_client(user_token)
 
 def current_auth(
     user: dict = Depends(require_user),
