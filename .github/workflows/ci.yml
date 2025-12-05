@@ -64,10 +64,6 @@ jobs:
           timeout: 300s
           envs: GEMINI_API_KEY,HF_TOKEN
           script: |
-            set -e
-            set -u
-            set -o pipefail
-
             echo "✅ SSH connection successful!"
             echo "Starting deployment..."
 
