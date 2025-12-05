@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 interface CreatePostModalProps {
   isOpen: boolean;
@@ -25,10 +25,15 @@ export default function CreatePostModal({
   const [loading, setLoading] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const accessToken = localStorage.getItem("accessToken");
+  const [mounted, setMounted] = useState(false);
+
+  // Avoid SSR/client mismatches for any browser-only APIs used in this modal
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // If modal is closed, render nothing
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   // -------------------------
   // HANDLERS
@@ -37,13 +42,13 @@ export default function CreatePostModal({
     const f = e.target.files?.[0];
     if (!f) return;
 
-    if (!["video/mp4", "video/webm", "video/ogg", "video/quicktime", "image/png", "image/jpeg", "image/webp", "image/gif", ].includes(f.type)) {
+    if (!["video/mp4", "video/webm", "video/ogg", "video/quicktime", "image/png", "image/jpeg", "image/webp", "image/gif"].includes(f.type)) {
       setError("Invalid file type.");
       return;
     }
 
-    if (f.size > 10 * 1024 * 1024) {
-      setError("File too large (max 10MB).");
+    if (f.size > 50 * 1024 * 1024) {
+      setError("File too large (max 50MB).");
       return;
     }
 
@@ -135,7 +140,7 @@ export default function CreatePostModal({
       onClick={onClose}
     >
       <div
-        className="w-[600px] max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-8 shadow-xl relative"
+        className="w-[600px] max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-8 shadow-xl relative no-scrollbar"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Title */}
@@ -178,7 +183,7 @@ export default function CreatePostModal({
             type="file"
             ref={fileInputRef}
             className="hidden"
-            accept="image/*"
+            accept="image/*, video/*"
             onChange={handleFileSelect}
           />
         </div>
