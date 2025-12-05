@@ -42,13 +42,13 @@ export default function CreatePostModal({
     const f = e.target.files?.[0];
     if (!f) return;
 
-    if (!["video/mp4", "video/webm", "video/ogg", "video/quicktime", "image/png", "image/jpeg", "image/webp", "image/gif", ].includes(f.type)) {
+    if (!["video/mp4", "video/webm", "video/ogg", "video/quicktime", "image/png", "image/jpeg", "image/webp", "image/gif"].includes(f.type)) {
       setError("Invalid file type.");
       return;
     }
 
-    if (f.size > 10 * 1024 * 1024) {
-      setError("File too large (max 10MB).");
+    if (f.size > 50 * 1024 * 1024) {
+      setError("File too large (max 50MB).");
       return;
     }
 
@@ -183,7 +183,7 @@ export default function CreatePostModal({
             type="file"
             ref={fileInputRef}
             className="hidden"
-            accept="image/*"
+            accept="image/*, video/*"
             onChange={handleFileSelect}
           />
         </div>
