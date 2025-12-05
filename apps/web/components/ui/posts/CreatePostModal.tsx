@@ -1,7 +1,27 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { AxiosError } from "axios";
+import api from "@/lib/api";
 import { MediaViewerModal } from "@/components/media/MediaViewerModal";
+
+function formatAxiosError(err: any): string {
+  const axiosErr = err as AxiosError<any>;
+  const data = axiosErr.response?.data;
+
+  const detail = data?.detail ?? data?.message ?? data?.error;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d: any) => d?.msg || d?.message || JSON.stringify(d))
+      .join(" | ");
+  }
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") {
+    return detail.msg || detail.message || JSON.stringify(detail);
+  }
+
+  return axiosErr.message || "Request failed.";
+}
 
 interface CreatePostModalProps {
   isOpen: boolean;
@@ -89,39 +109,29 @@ export default function CreatePostModal({
         formData.append("file", file);
         formData.append("caption", caption);
 
-        const uploadRes = await fetch("http://localhost:8001/api/v1/media/upload", {
-          method: "POST",
-          credentials: "include",
-          headers: { Authorization: `Bearer ${accessToken}` },
-          body: formData,
+        const uploadRes = await api.post("/api/v1/media/upload", formData, {
+          headers: {
+            // Explicitly override default JSON header for multipart
+            "Content-Type": "multipart/form-data",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          withCredentials: true,
         });
 
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text();
-          throw new Error(`Failed to upload media: ${errText || uploadRes.statusText}`);
-        }
-
-        const data = await uploadRes.json();
-        // API returns { success, data: { id, public_url, ... } }
+        const data = uploadRes.data;
         mediaId = data?.data?.id || null;
         setUploadedMediaId(mediaId);
         setUploadedMediaUrl(data?.data?.public_url || null);
       }
 
-      const postRes = await fetch("http://localhost:8001/api/v1/posts", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ caption, media_id: mediaId }),
-      });
-
-      if (!postRes.ok) {
-        const errText = await postRes.text();
-        throw new Error(`Post creation failed: ${errText || postRes.statusText}`);
-      }
+      await api.post(
+        "/api/v1/posts",
+        { caption, media_id: mediaId },
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          withCredentials: true,
+        }
+      );
 
       setCaption("");
       setFile(null);
@@ -132,7 +142,7 @@ export default function CreatePostModal({
       onPostCreated();
       onClose();
     } catch (err: any) {
-      setError(err.message);
+      setError(formatAxiosError(err));
     }
 
     setLoading(false);

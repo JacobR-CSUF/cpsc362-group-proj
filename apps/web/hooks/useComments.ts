@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AxiosError } from "axios";
+import api from "@/lib/api";
 import { decodeJwtPayload } from "@/utils/jwt";
 
 export interface CommentAuthor {
@@ -21,7 +23,23 @@ export interface Comment {
 // simple in-memory cache keyed by postId
 const commentsCache = new Map<string, Comment[]>();
 
-const API_BASE = "http://localhost:8001";
+function formatAxiosError(err: any): string {
+  const axiosErr = err as AxiosError<any>;
+  const data = axiosErr.response?.data;
+  const detail = data?.detail ?? data?.message ?? data?.error;
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d: any) => d?.msg || d?.message || JSON.stringify(d))
+      .join(" | ");
+  }
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") {
+    return detail.msg || detail.message || JSON.stringify(detail);
+  }
+
+  return axiosErr.message || "Request failed.";
+}
 
 export function useComments(postId: string | null) {
   const [comments, setComments] = useState<Comment[]>([]);
@@ -56,25 +74,14 @@ export function useComments(postId: string | null) {
     setError(null);
 
     try {
-      const res = await fetch(
-        `${API_BASE}/api/v1/comments/posts/${id}/comments?page=1&page_size=50`,
-        {
-          method: "GET",
-          // comments GET is public in your example, so no auth header needed
-        }
-      );
-
-      if (!res.ok) {
-        throw new Error(`Failed to load comments (${res.status})`);
-      }
-
-      const data = await res.json();
-
-      const results: Comment[] = data?.results ?? [];
+      const res = await api.get(`/api/v1/comments/posts/${id}/comments`, {
+        params: { page: 1, page_size: 50 },
+      });
+      const results: Comment[] = res.data?.results ?? res.data?.data ?? [];
       commentsCache.set(id, results);
       setComments(results);
     } catch (err: any) {
-      setError(err.message || "Failed to load comments");
+      setError(formatAxiosError(err));
     } finally {
       setLoading(false);
     }
@@ -84,11 +91,6 @@ export function useComments(postId: string | null) {
     if (!postId) return;
     const trimmed = content.trim();
     if (!trimmed) return;
-
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) {
-      throw new Error("User is not logged in (missing token).");
-    }
 
     // optimistic comment
     const tempId = `temp-${Date.now()}`;
@@ -114,26 +116,13 @@ export function useComments(postId: string | null) {
     });
 
     try {
-      const res = await fetch(
-        `${API_BASE}/api/v1/comments/posts/${postId}/comments`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ content: trimmed }),
-        }
+      const res = await api.post(
+        `/api/v1/comments/posts/${postId}/comments`,
+        { content: trimmed },
+        { withCredentials: true }
       );
 
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || "Failed to post comment");
-      }
-
-      const data = await res.json();
-      const created: Comment = data?.data;
+      const created: Comment = res.data?.data ?? res.data;
 
       setComments((prev) => {
         const replaced = prev.map((c) => (c.id === tempId ? created : c));
@@ -147,17 +136,12 @@ export function useComments(postId: string | null) {
         commentsCache.set(postId, filtered);
         return filtered;
       });
-      throw err;
+      throw new Error(formatAxiosError(err));
     }
   };
 
   const deleteComment = async (commentId: string) => {
     if (!postId) return;
-
-    const accessToken = localStorage.getItem("access_token");
-    if (!accessToken) {
-      throw new Error("User is not logged in (missing token).");
-    }
 
     const prev = commentsCache.get(postId) ?? [];
     const updated = prev.filter((c) => c.id !== commentId);
@@ -167,23 +151,14 @@ export function useComments(postId: string | null) {
     setComments(updated);
 
     try {
-      const res = await fetch(`${API_BASE}/api/v1/comments/${commentId}`, {
-        method: "DELETE",
-        credentials: "include",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+      await api.delete(`/api/v1/comments/${commentId}`, {
+        withCredentials: true,
       });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Delete failed: ${res.status}`);
-      }
-    } catch (err) {
+    } catch (err: any) {
       // rollback on error
       commentsCache.set(postId, prev);
       setComments(prev);
-      throw err;
+      throw new Error(formatAxiosError(err));
     }
   };
 
