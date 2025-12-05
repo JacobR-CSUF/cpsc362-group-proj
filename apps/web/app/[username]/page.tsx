@@ -6,6 +6,7 @@ import {
   type PostCardPost,
 } from "@/components/ui/posts/PostCard";
 import { useParams } from "next/navigation";
+import { MediaViewerModal } from "@/components/media/MediaViewerModal";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
@@ -37,6 +38,7 @@ export default function UserProfilePage({
   const [posts, setPosts] = useState<PostCardPost[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
   const [postsError, setPostsError] = useState<string | null>(null);
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -171,21 +173,30 @@ export default function UserProfilePage({
     : "Unknown";
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10">
+    <div className="w-full px-2 py-10 sm:px-4">
       <div className="mb-10 flex flex-col items-center gap-3">
-        <img
-          src={
-            user.profile_pic ??
-            "https://placehold.co/180x180?text=Profile"
-          }
-          alt={`${user.username}'s avatar`}
-          className="h-40 w-40 rounded-full object-cover"
-        />
+        <button
+          type="button"
+          onClick={() => setAvatarModalOpen(true)}
+          className="relative"
+          aria-label="View profile picture"
+        >
+          <img
+            src={
+              user.profile_pic ??
+              "https://placehold.co/180x180?text=Profile"
+            }
+            alt={`${user.username}'s avatar`}
+            className="h-40 w-40 rounded-full object-cover"
+          />
+        </button>
 
         <h1 className="text-3xl font-semibold">{user.username}</h1>
 
         <p className="text-sm text-gray-500">Joined: {joined}</p>
       </div>
+
+      <hr className="-mx-4 my-8 border-t-2 border-black/20" />
 
       {postsError && (
         <p className="mb-4 text-center text-sm text-red-500">
@@ -199,11 +210,21 @@ export default function UserProfilePage({
         <p className="text-center text-gray-500">No posts found.</p>
       )}
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 justify-items-stretch">
         {posts.map((post) => (
           <PostCard key={post.id} post={post} />
         ))}
       </div>
+
+      <MediaViewerModal
+        isOpen={avatarModalOpen}
+        onClose={() => setAvatarModalOpen(false)}
+        mediaUrl={
+          user.profile_pic ??
+          "https://placehold.co/180x180?text=Profile"
+        }
+        mediaType="image"
+      />
     </div>
   );
 }

@@ -35,9 +35,14 @@ export interface PostCardPost {
 interface PostCardProps {
   post: PostCardPost;
   commentsHook?: ReturnType<typeof useComments>;
+  className?: string;
 }
 
-export function PostCard({ post, commentsHook }: PostCardProps) {
+export function PostCard({
+  post,
+  commentsHook,
+  className = "",
+}: PostCardProps) {
   const fallbackHook = useComments(
     commentsHook ? null : post?.id ?? null
   );
@@ -60,7 +65,9 @@ export function PostCard({ post, commentsHook }: PostCardProps) {
     : "";
 
   return (
-    <article className="rounded-[10px] bg-white p-4 shadow-md">
+    <article
+      className={`w-full rounded-[10px] bg-white p-4 shadow-md ${className}`}
+    >
       <header className="mb-3 flex items-center gap-3">
         {post?.author?.profile_pic ? (
           <img
