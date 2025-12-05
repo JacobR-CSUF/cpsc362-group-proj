@@ -19,7 +19,7 @@ export function CommentsPreview({
 }: CommentsPreviewProps) {
   if (loading && comments.length === 0) {
     return (
-      <p className="mt-2 text-sm text-gray-500">Loading comments…</p>
+      <p className="mt-2 text-sm text-gray-500">Loading comments...</p>
     );
   }
 
@@ -51,7 +51,7 @@ export function CommentsPreview({
       {preview.map((c) => (
         <div key={c.id}>
           <Link
-            href={`/users/${c.author.username}`}
+            href={`/${c.author.username}`}
             className="font-semibold hover:underline"
           >
             {c.author.username}

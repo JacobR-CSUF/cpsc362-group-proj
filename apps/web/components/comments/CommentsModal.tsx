@@ -12,6 +12,8 @@ interface CommentsModalProps {
   loading: boolean;
   error: string | null;
   addComment: (content: string) => Promise<void>;
+  deleteComment: (id: string) => Promise<void>;
+  currentUserId: string | null;
 }
 
 export function CommentsModal({
@@ -22,6 +24,8 @@ export function CommentsModal({
   loading,
   error,
   addComment,
+  deleteComment,
+  currentUserId,
 }: CommentsModalProps) {
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -53,30 +57,29 @@ export function CommentsModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
     >
       <div
         className="relative flex max-h-[80vh] w-full max-w-xl flex-col rounded-[10px] bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Close button */}
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-3 top-3 rounded-full p-1 text-gray-500 hover:bg-gray-100 hover:text-black"
+          className="absolute right-3 top-3 rounded-full px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 hover:text-black"
+          aria-label="Close comments"
         >
-          ✕
+          Close
         </button>
 
-        {/* Comments list */}
-        <div className="no-scrollbar flex-1 overflow-y-auto px-4 pt-10 pb-3 space-y-3">
+        <div className="no-scrollbar flex-1 space-y-3 overflow-y-auto px-4 pt-10 pb-3">
           {loading && comments.length === 0 && (
-            <p className="text-sm text-gray-500">Loading comments…</p>
+            <p className="text-sm text-gray-500">Loading comments...</p>
           )}
 
           {error && comments.length === 0 && (
-            <p className="text-sm text-red-500">
-              Could not load comments.
-            </p>
+            <p className="text-sm text-red-500">Could not load comments.</p>
           )}
 
           {!loading && !error && comments.length === 0 && (
@@ -86,16 +89,20 @@ export function CommentsModal({
           )}
 
           {comments.map((c) => (
-            <CommentItem key={c.id} comment={c} />
+            <CommentItem
+              key={c.id}
+              comment={c}
+              canDelete={currentUserId === c.author.id}
+              onDelete={() => deleteComment(c.id)}
+            />
           ))}
         </div>
 
-        {/* Input bar */}
         <div className="border-t border-black/10 px-4 py-3">
           <textarea
             className="w-full resize-none rounded-md border border-black/20 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/40"
             rows={3}
-            placeholder="Write a comment…"
+            placeholder="Write a comment..."
             maxLength={500}
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -114,7 +121,7 @@ export function CommentsModal({
             }
             className="mt-2 w-full rounded-md bg-black py-2 text-sm font-semibold text-white hover:bg-black/90 disabled:opacity-50"
           >
-            {submitting ? "Posting…" : "Post"}
+            {submitting ? "Posting..." : "Post"}
           </button>
         </div>
       </div>
