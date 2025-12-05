@@ -24,7 +24,7 @@ export const useAuth = () => {
       setUser(userData);
       setIsAuth(true);
     } catch (error) {
-      console.error('Failed to fetch user:', error);
+      console.error('Failed to fetch user:', error); // Keep this one for debugging
       removeToken();
       setUser(null);
       setIsAuth(false);

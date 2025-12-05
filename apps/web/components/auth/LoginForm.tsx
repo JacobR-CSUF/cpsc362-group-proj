@@ -23,10 +23,7 @@ export const LoginForm = () => {
     setError('');
 
     try {
-        console.log('Attempting login...'); 
         const result = await authAPI.login(data);
-        console.log('Login response:', result); 
-        console.log('Token in localStorage:', localStorage.getItem('access_token')); 
         router.push('/feed');
     } catch (err: any) {
       console.error('Login error:', err);
