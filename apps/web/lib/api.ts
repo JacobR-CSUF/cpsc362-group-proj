@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { AuthResponse, LoginRequest, RegisterRequest, User } from '@/types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://api.geeb.pp.ua';
 
 type ApiResponse<T> = {
   success: boolean;

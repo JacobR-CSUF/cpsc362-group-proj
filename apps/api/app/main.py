@@ -24,6 +24,9 @@ app = FastAPI(
 # CORS
 default_origins = [
     "https://project.geeb.pp.ua",
+    "https://api.geeb.pp.ua",
+    "http://100.92.51.75:8000",
+    "http://100.92.51.75:3000",
     "http://localhost:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3000",

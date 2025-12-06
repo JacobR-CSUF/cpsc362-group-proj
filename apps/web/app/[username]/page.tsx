@@ -6,7 +6,7 @@ import { PostCard, type PostCardPost } from "@/components/ui/posts/PostCard";
 import { Navbar } from "@/components/layout/Navbar";
 import { useAuth } from "@/hooks/useAuth";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://api.geeb.pp.ua";
 
 type UserProfile = {
   id: string;
