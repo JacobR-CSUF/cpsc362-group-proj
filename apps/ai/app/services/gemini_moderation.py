@@ -194,10 +194,32 @@ def moderate_image(
     raw_text = (response.text or "").strip()
     logger.debug("Raw moderation response: %s", raw_text)
 
+    def _safe_parse(text: str) -> Dict[str, Any]:
+        # Try strict parse first
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            # Try to extract first JSON object with braces (handles code fences / extra text)
+            match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    pass
+            raise
+
     try:
-        data = json.loads(raw_text)
+        if not raw_text:
+            logger.warning("Gemini returned empty response; treating image as unsafe.")
+            return {
+                "is_safe": False,
+                "reason": "Moderation unavailable (empty response)",
+                "categories": ["unknown:severe"],
+                "level": level.value,
+            }
+        data = _safe_parse(raw_text)
     except json.JSONDecodeError as e:
-        logger.error("Failed to parse Gemini moderation JSON: %s", e)
+        logger.error("Failed to parse Gemini moderation JSON: %s | raw=%r", e, raw_text[:500])
         raise ModerationError("Gemini returned invalid JSON for moderation")
 
     is_flagged = bool(data.get("is_flagged", False))
