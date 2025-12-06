@@ -67,6 +67,23 @@ async def get_user_by_id(user_id: str) -> dict:
         )
 
 
+async def get_user_by_username(username: str) -> dict:
+    """Fetch user from database by username"""
+    try:
+        client = get_supabase_client()
+        response = client.table("users").select("*").eq("username", username).execute()
+
+        if not response.data or len(response.data) == 0:
+            return None
+
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
+
+
 # Endpoints
 @router.get("/me", response_model=UserResponse, status_code=status.HTTP_200_OK)
 async def get_current_user_profile(current_user: dict = Depends(get_current_user)):
@@ -87,6 +104,42 @@ async def get_current_user_profile(current_user: dict = Depends(get_current_user
         return UserResponse(
             success=True,
             data=UserPrivateProfile(**user_data)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/username/{username}", response_model=UserResponse, status_code=status.HTTP_200_OK)
+async def get_user_profile_by_username(username: str):
+    """
+    Get any user's public profile by username (does not include email)
+
+    Public endpoint - no authentication required
+    """
+    try:
+        user_data = await get_user_by_username(username)
+
+        if not user_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with username {username} not found"
+            )
+
+        public_data = {
+            "id": str(user_data["id"]),
+            "username": user_data["username"],
+            "profile_pic": user_data.get("profile_pic"),
+            "created_at": user_data["created_at"]
+        }
+
+        return UserResponse(
+            success=True,
+            data=UserPublicProfile(**public_data)
         )
     except HTTPException:
         raise
