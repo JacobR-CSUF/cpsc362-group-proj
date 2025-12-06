@@ -52,46 +52,69 @@ def _get_media_or_404(media_id: str) -> Dict[str, Any]:
 @router.get(
     "/{media_id}/transcript",
     response_model=TranscriptResponse,
-    summary="Get transcript text for a media item",
+    summary="Get transcript text for a media item (on demand)",
 )
 async def get_media_transcript(
     media_id: str,
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Return transcript text for a given media (video) item.
+    Generate transcript on demand for a video media item.
 
-    Assumes:
-    - For video uploads, the Whisper pipeline already stored transcript
-      text inside the `caption` column of the `media` table.
+    Flow:
+    1) Load media row from Supabase by `media_id`
+    2) Take `public_url` (MinIO URL)
+    3) Call AI service `/process-video` with:
+       - skip_moderation = True
+       - skip_summary = True
+    4) Return transcription text only (do not store in DB)
     """
     media = _get_media_or_404(media_id)
 
-    # Optional: restrict to videos only
     if media.get("media_type") != "video":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Transcript is only available for video media.",
         )
 
-    transcript = (media.get("caption") or "").strip()
-    if not transcript:
-        # Either Whisper did not run, or no text was stored
+    file_url = media.get("public_url")
+    if not file_url:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No transcript stored for this media.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Media has no public_url stored.",
+        )
+
+    try:
+        ai_result = await AIServiceClient.process_video(
+            file_url=file_url,
+            skip_moderation=True,
+            skip_summary=True,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Transcription service failed: {e}",
+        )
+
+    transcription = (ai_result or {}).get("transcription") or {}
+    text = (transcription.get("text") or "").strip()
+
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Transcription service returned empty text.",
         )
 
     return TranscriptResponse(
         media_id=media_id,
-        text=transcript,
+        text=text,
     )
 
 
 @router.get(
     "/{media_id}/summary",
     response_model=SummaryResponse,
-    summary="Summarize transcript text for a media item",
+    summary="Summarize transcript text for a media item (on demand)",
 )
 async def get_media_summary(
     media_id: str,
@@ -99,12 +122,16 @@ async def get_media_summary(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Generate a summary for a given media item.
+    Generate a summary for a given media item on demand.
 
     Flow:
-    1) Load transcript text from `media.caption`
-    2) Call AI service /summarize via AIServiceClient.summarize_text
-    3) Return summary text
+    1) Load media row from Supabase by `media_id`
+    2) Take `public_url` (MinIO URL)
+    3) Call AI service `/process-video` and let it:
+       - transcribe
+       - (optionally moderate)
+       - summarize
+    4) Return summary text only (do not store in DB)
     """
     media = _get_media_or_404(media_id)
 
@@ -114,26 +141,31 @@ async def get_media_summary(
             detail="Summary is only available for video media.",
         )
 
-    transcript = (media.get("caption") or "").strip()
-    if not transcript:
+    file_url = media.get("public_url")
+    if not file_url:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No transcript stored for this media.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Media has no public_url stored.",
         )
 
-    # Call AI service summarizer
     try:
-        ai_result = await AIServiceClient.summarize_text(
-            text=transcript,
-            style=style,
+        # If you do NOT want moderation here, set skip_moderation=True
+        ai_result = await AIServiceClient.process_video(
+            file_url=file_url,
+            summary_style=style,
+            skip_moderation=False,
+            skip_summary=False,
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Summarization service failed: {e}",
+            detail=f"Video pipeline service failed: {e}",
         )
 
-    summary_text = (ai_result or {}).get("summary", "").strip()
+    summary_block = (ai_result or {}).get("summary") or {}
+    summary_text = (summary_block.get("summary") or "").strip()
+    summary_style = summary_block.get("style") or style
+
     if not summary_text:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -143,6 +175,6 @@ async def get_media_summary(
     return SummaryResponse(
         media_id=media_id,
         summary=summary_text,
-        style=style,
-        source="media.caption",
+        style=summary_style,
+        source="live-ai",  # indicates it was generated on demand
     )

@@ -40,7 +40,7 @@ export function PostActions({ mediaId }: PostActionsProps) {
 
     const accessToken =
         typeof window !== "undefined"
-            ? localStorage.getItem("accessToken")
+            ? localStorage.getItem("access_token")
             : null;
 
     /**
