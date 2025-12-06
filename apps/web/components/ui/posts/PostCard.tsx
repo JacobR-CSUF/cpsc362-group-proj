@@ -21,6 +21,7 @@ export interface PostMedia {
   public_url: string;
   media_type: "image" | "video";
   caption: string | null;
+  transcription_url?: string | null;
 }
 
 export interface PostCardPost {
@@ -64,6 +65,10 @@ export function PostCard({
     ? new Date(post.created_at).toLocaleString()
     : "";
 
+  const handleOpenMedia = () => {
+    setMediaModalOpen(true);
+  };
+
   return (
     <article
       className={`w-full rounded-[10px] bg-white p-4 shadow-md ${className}`}
@@ -97,7 +102,7 @@ export function PostCard({
         <button
           type="button"
           className="mb-3 w-full cursor-pointer overflow-hidden rounded-[10px] border border-black/10 bg-black/5"
-          onClick={() => setMediaModalOpen(true)}
+          onClick={handleOpenMedia}
         >
           {post.media.media_type === "image" ? (
             <img
@@ -153,6 +158,9 @@ export function PostCard({
         onClose={() => setMediaModalOpen(false)}
         mediaUrl={post.media?.public_url ?? null}
         mediaType={post.media?.media_type ?? null}
+        transcriptionUrl={post.media?.transcription_url ?? null}
+        mediaId={post.media?.id ?? null}
+        sourceLabel="PostCard"
       />
     </article>
   );
