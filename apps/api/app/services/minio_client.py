@@ -17,6 +17,7 @@ class MinIOService:
         self.bucket_name = "social-media-uploads"
         self._ensure_bucket()
         self._set_bucket_policy()
+        self._set_bucket_cors()
 
     def _ensure_bucket(self):
         """Create bucket if it doesn't exist"""
@@ -44,6 +45,22 @@ class MinIOService:
             self.client.set_bucket_policy(self.bucket_name, json.dumps(policy))
         except S3Error as e:
             print(f"Warning: Could not set bucket policy: {e}")
+
+    def _set_bucket_cors(self):
+        """Allow browser fetch() from other origins (e.g., VTT downloads)."""
+        try:
+            cors_rules = [
+                {
+                    "AllowedMethod": ["GET", "HEAD"],
+                    "AllowedOrigin": ["*"],
+                    "AllowedHeader": ["*"],
+                    "ExposeHeader": ["ETag"],
+                    "MaxAgeSeconds": 3000,
+                }
+            ]
+            self.client.set_bucket_cors(self.bucket_name, cors_rules)
+        except S3Error as e:
+            print(f"Warning: Could not set bucket CORS: {e}")
 
     def upload_file(self, file_path: str, object_name: str) -> str:
         """Upload file to MinIO and return URL"""
