@@ -174,23 +174,20 @@ export default function CreatePostModal({
               } catch {
                 // ignore cleanup errors
               }
-            }
-            setUnsafeReason(
-              modData?.reason ||
+              setUnsafeReason(
+                modData?.reason ||
                 "Sensitive Content. Failed to upload. Action has been reported to the administrators."
-            );
-            setUnsafeMediaType(mediaType || "image");
-            setUnsafeModalOpen(true);
-            setFile(null);
-            setPreview(null);
-            setUploadedMediaId(null);
-            setUploadedMediaUrl(null);
-            setLoading(false);
-            return;
-          }
-        } catch (modErr: any) {
-          // Treat moderation errors as unsafe
-          if (mediaId) {
+              );
+              setUnsafeMediaType("image"); 
+              setUnsafeModalOpen(true);
+              setFile(null);
+              setPreview(null);
+              setUploadedMediaId(null);
+              setUploadedMediaUrl(null);
+              setLoading(false);
+              return;
+            }
+          } catch (modErr: any) {
             try {
               await api.delete(`/api/v1/media/${mediaId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
@@ -199,18 +196,18 @@ export default function CreatePostModal({
             } catch {
               // ignore cleanup errors
             }
+            setUnsafeReason(
+              "Sensitive Content. Failed to upload. Action has been reported to the administrators."
+            );
+            setUnsafeMediaType("image");
+            setUnsafeModalOpen(true);
+            setFile(null);
+            setPreview(null);
+            setUploadedMediaId(null);
+            setUploadedMediaUrl(null);
+            setLoading(false);
+            return;
           }
-          setUnsafeReason(
-            "Sensitive Content. Failed to upload. Action has been reported to the administrators."
-          );
-          setUnsafeMediaType(mediaType || "image");
-          setUnsafeModalOpen(true);
-          setFile(null);
-          setPreview(null);
-          setUploadedMediaId(null);
-          setUploadedMediaUrl(null);
-          setLoading(false);
-          return;
         }
       }
 
