@@ -30,6 +30,13 @@ class SummaryResponse(BaseModel):
     style: str = Field(..., description="Summary style used (brief/detailed/bullet_points)")
     source: str = Field(..., description="Where the transcript text was loaded from")
 
+class EmotionResponse(BaseModel):
+    media_id: str = Field(..., description="ID of the media record")
+    top_emotion: str = Field(..., description="Dominant detected emotion label")
+    score: float = Field(..., description="Confidence score for the top emotion (0–1)")
+    all_scores: Dict[str, float] = Field(
+        ..., description="Per-emotion confidence scores (0–1)"
+    )
 
 def _get_media_or_404(media_id: str) -> Dict[str, Any]:
     """
@@ -177,4 +184,68 @@ async def get_media_summary(
         summary=summary_text,
         style=summary_style,
         source="live-ai",  # indicates it was generated on demand
+    )
+
+@router.get(
+    "/{media_id}/emotion",
+    response_model=EmotionResponse,
+    summary="Analyze dominant emotion for an image media item (on demand)",
+)
+async def get_media_emotion(
+    media_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Analyze emotion for an *image* media item.
+
+    Flow:
+    1) Load media row from Supabase by `media_id`
+    2) Check `media_type == 'image'`
+    3) Take `public_url` (MinIO/Supabase URL)
+    4) Call AI service `/emotion/detect` via AIServiceClient.detect_emotion
+    5) Return top_emotion, score, and all_scores (do not store in DB)
+    """
+    # 1) media row 조회
+    media = _get_media_or_404(media_id)
+
+    # 2) 이미지 타입인지 확인
+    if media.get("media_type") != "image":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Emotion analysis is only available for image media.",
+        )
+
+    # 3) public_url 확인
+    file_url = media.get("public_url")
+    if not file_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Media has no public_url stored.",
+        )
+
+    # 4) AI 서비스 호출
+    try:
+        ai_result = await AIServiceClient.detect_emotion(file_url=file_url)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Emotion detection service failed: {e}",
+        )
+
+    top_emotion = ai_result.get("top_emotion")
+    score = ai_result.get("score")
+    all_scores = ai_result.get("all_scores") or {}
+
+    if top_emotion is None or score is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Emotion detection service returned no result.",
+        )
+
+    # 5) 포맷 맞춰서 리턴
+    return EmotionResponse(
+        media_id=media_id,
+        top_emotion=top_emotion,
+        score=score,
+        all_scores=all_scores,
     )
