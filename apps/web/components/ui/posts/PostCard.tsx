@@ -1,4 +1,4 @@
-// components/posts/PostCard.tsx
+// components/ui/posts/PostCard.tsx
 "use client";
 
 import Link from "next/link";
@@ -9,6 +9,8 @@ import { CommentsPreview } from "@/components/comments/CommentsPreview";
 import { LikeButton } from "@/components/LikeButton";
 import { MediaViewerModal } from "@/components/media/MediaViewerModal";
 import { useComments } from "@/hooks/useComments";
+import { useAuth } from "@/hooks/useAuth";
+import { PostActions } from "@/components/ui/posts/PostActions";
 
 export interface PostAuthorSummary {
   user_id: string;
@@ -21,7 +23,7 @@ export interface PostMedia {
   public_url: string;
   media_type: "image" | "video";
   caption: string | null;
-  transcription_url?: string | null;
+  transcription_url?: string | null; // KEEP YOUR EXTENDED FIELD
 }
 
 export interface PostCardPost {
@@ -44,6 +46,8 @@ export function PostCard({
   commentsHook,
   className = "",
 }: PostCardProps) {
+  const { user } = useAuth();
+
   const fallbackHook = useComments(
     commentsHook ? null : post?.id ?? null
   );
@@ -58,40 +62,81 @@ export function PostCard({
 
   const [commentsModalOpen, setCommentsModalOpen] = useState(false);
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const avatarFallback =
     post?.author?.username?.[0]?.toUpperCase() ?? "?";
+
   const createdAtLabel = post?.created_at
     ? new Date(post.created_at).toLocaleString()
     : "";
 
-  const handleOpenMedia = () => {
-    setMediaModalOpen(true);
+  const isMyPost = user?.id === post.author.user_id;
+
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to delete this post?")) return;
+
+    setDeleting(true);
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/posts/${post.id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!res.ok) throw new Error("Failed to delete post");
+
+      window.location.reload();
+    } catch (err) {
+      alert("Failed to delete post. Please try again.");
+      setDeleting(false);
+    }
   };
 
   return (
     <article
-      className={`w-full rounded-[10px] bg-white p-4 shadow-md ${className}`}
+      className={`relative w-full rounded-lg bg-white border-2 border-green-200 p-4 shadow-md hover:border-green-300 transition-colors ${className}`}
     >
+      {isMyPost && (
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="absolute top-2 right-2 p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors disabled:opacity-50"
+          title="Delete post"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      )}
+
       <header className="mb-3 flex items-center gap-3">
         {post?.author?.profile_pic ? (
           <img
             src={post.author.profile_pic}
             alt={`${post.author.username}'s avatar`}
-            className="h-10 w-10 rounded-full object-cover"
+            className="h-10 w-10 rounded-full object-cover border-2 border-green-300"
           />
         ) : (
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-200 text-sm font-semibold">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 border-2 border-green-300 text-sm font-semibold text-green-700">
             {avatarFallback}
           </div>
         )}
+
         <div className="min-w-0">
           <Link
-            href={`/${post.author.username}`}
-            className="text-sm font-semibold hover:underline"
+            href={user?.id === post.author.user_id ? "/me" : `/${post.author.username}`}
+            className="text-sm font-semibold text-green-700 hover:text-green-600 hover:underline"
           >
             {post.author.username}
           </Link>
+
           {createdAtLabel && (
             <p className="text-xs text-gray-500">{createdAtLabel}</p>
           )}
@@ -101,8 +146,8 @@ export function PostCard({
       {post.media && post.media.public_url && (
         <button
           type="button"
-          className="mb-3 w-full cursor-pointer overflow-hidden rounded-[10px] border border-black/10 bg-black/5"
-          onClick={handleOpenMedia}
+          className="mb-3 w-full cursor-pointer overflow-hidden rounded-lg border-2 border-green-200 bg-black/5 hover:border-green-300 transition-colors"
+          onClick={() => setMediaModalOpen(true)}
         >
           {post.media.media_type === "image" ? (
             <img
@@ -126,7 +171,9 @@ export function PostCard({
         <p className="mb-3 text-sm text-gray-900">{post.caption}</p>
       )}
 
-      <div className="mb-2 flex items-center gap-4">
+      <PostActions mediaId={post.media?.id ?? null} />
+
+      <div className="mt-2 mb-2 flex items-center gap-4">
         <LikeButton initialCount={post.likes_count ?? 0} />
         <CommentToggle
           count={comments.length}
