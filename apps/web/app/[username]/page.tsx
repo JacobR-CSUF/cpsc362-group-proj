@@ -132,7 +132,15 @@ export default function UserProfilePage({
         }
 
         const json = await res.json();
-        const list = (json.data ?? json.results ?? []) as PostCardPost[];
+        const list = ((json.data ?? json.results ?? []) as PostCardPost[]).map(
+          (p) => ({
+            ...p,
+            media: p.media
+              ? { ...p.media, transcription_url: p.media.transcription_url ?? null }
+              : null,
+          })
+        );
+
         setPosts(list);
       } catch (err: any) {
         if (err.name === "AbortError") return;
