@@ -152,20 +152,19 @@ export default function CreatePostModal({
         setUploadedMediaUrl(data?.data?.public_url || null);
         mediaType = file.type.startsWith("video/") ? "video" : "image";
 
-        // Moderate uploaded media via backend proxy (images and videos)
-        try {
-          const modRes = await api.post(
-            "/api/v1/media/moderate",
-            { file_url: data?.data?.public_url, media_type: mediaType, user: undefined },
-            {
-              headers: { Authorization: `Bearer ${accessToken}` },
-              withCredentials: true,
-            }
-          );
-          const modData = modRes.data;
-          if (!modData?.is_safe) {
-            // cleanup uploaded media
-            if (mediaId) {
+        if (file.type.startsWith("image/") && mediaId && publicUrl) {
+          try {
+            const modRes = await api.post(
+              "/api/v1/media/moderate",
+              { file_url: publicUrl, user: undefined },
+              {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                withCredentials: true,
+              }
+            );
+            const modData = modRes.data;
+            if (!modData?.is_safe) {
+              // cleanup uploaded media
               try {
                 await api.delete(`/api/v1/media/${mediaId}`, {
                   headers: { Authorization: `Bearer ${accessToken}` },
@@ -187,7 +186,7 @@ export default function CreatePostModal({
               setLoading(false);
               return;
             }
-          } catch (modErr: any) {
+          } catch (modErr) {
             try {
               await api.delete(`/api/v1/media/${mediaId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
