@@ -40,6 +40,7 @@ export interface PostMedia {
   public_url: string;
   media_type: 'image' | 'video' | null;
   caption: string | null;
+  transcription_url?: string | null;
 }
 
 // Post types

@@ -52,6 +52,7 @@ class MediaUploadResponse(BaseModel):
 class MediaModerationRequest(BaseModel):
     file_url: str
     user: Optional[str] = None
+    media_type: Optional[str] = None  # 'image' | 'video'
 
 class MediaModerationResponse(BaseModel):
     is_safe: bool
@@ -344,18 +345,55 @@ async def moderate_media(
             detail="Moderation service unavailable",
         )
 
+    media_type = getattr(payload, "media_type", None)
+    is_video = False
+    if media_type:
+        is_video = str(media_type).lower().startswith("video")
+    else:
+        lower_url = payload.file_url.lower()
+        if any(lower_url.endswith(ext) for ext in [".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]):
+            is_video = True
+
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
+        json_body: Dict[str, Any] = {
+            "file_url": payload.file_url,
+        }
+
+        ai_endpoint = "/process-image"
+        if is_video:
+            ai_endpoint = "/process-video"
+            json_body.update(
+                {
+                    "skip_summary": True,
+                    "skip_moderation": True,  # skip text moderation for videos
+                    "language": None,
+                }
+            )
+        else:
+            # Image pipeline accepts user for logging
+            json_body["user"] = payload.user or current_user.get("username")
+
+        async with httpx.AsyncClient(timeout=45) as client:
             resp = await client.post(
-                f"{AI_SERVICE_URL.rstrip('/')}/process-image",
-                json={
-                    "file_url": payload.file_url,
-                    "safety_level": "moderate",
-                    "user": payload.user or current_user.get("username"),
-                },
+                f"{AI_SERVICE_URL.rstrip('/')}{ai_endpoint}",
+                json=json_body,
             )
             resp.raise_for_status()
             data = resp.json()
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.text if exc.response else ""
+        logger.error(
+            "Moderation proxy failed user_id=%s username=%s file_url=%s status=%s body=%s",
+            current_user.get("id"),
+            current_user.get("username"),
+            payload.file_url,
+            exc.response.status_code if exc.response else "unknown",
+            body[:500],
+        )
+        raise HTTPException(
+            status_code=exc.response.status_code if exc.response else status.HTTP_502_BAD_GATEWAY,
+            detail=body or "Moderation failed",
+        )
     except Exception as exc:
         logger.error(
             "Moderation proxy failed user_id=%s username=%s file_url=%s error=%s",
@@ -369,8 +407,22 @@ async def moderate_media(
             detail="Sensitive Content. Failed to upload. Action has been reported to the administrators.",
         )
 
-    is_safe = bool(data.get("is_safe", False))
-    reason = data.get("moderation", {}).get("reason") if isinstance(data.get("moderation"), dict) else data.get("reason")
+    if is_video:
+        # Video pipeline response
+        is_safe = bool(data.get("is_safe", False))
+        # If text moderation flags unsafe, verdict will be 'unsafe'
+        if not is_safe or data.get("verdict") == "unsafe":
+            is_safe = False
+        reason = (
+            data.get("short_circuit_reason")
+            or data.get("summary", {}).get("reason")
+            or data.get("text_moderation", {}).get("explanation")
+            or data.get("stages", [{}])[-1].get("error")
+        )
+    else:
+        # Image moderation response
+        is_safe = bool(data.get("is_safe", False))
+        reason = data.get("moderation", {}).get("reason") if isinstance(data.get("moderation"), dict) else data.get("reason")
     if not is_safe:
         logger.warning(
             "Unsafe media detected user_id=%s username=%s file_url=%s reason=%s",
