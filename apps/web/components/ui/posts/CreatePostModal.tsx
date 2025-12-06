@@ -109,6 +109,7 @@ export default function CreatePostModal({
     try {
       let mediaId = uploadedMediaId;
       let mediaType: "image" | "video" | null = null;
+      let publicUrl = uploadedMediaUrl;
 
       // If a new file is selected, upload it first
       if (file) {
@@ -145,18 +146,17 @@ export default function CreatePostModal({
         }
 
         mediaId = data?.data?.id ?? null;
-        setUploadedMediaId(mediaId);
-        setUploadedMediaUrl(data?.data?.public_url ?? null);
-        mediaId = data?.data?.id || null;
-        setUploadedMediaId(mediaId);
-        setUploadedMediaUrl(data?.data?.public_url || null);
+        publicUrl = data?.data?.public_url ?? null;
         mediaType = file.type.startsWith("video/") ? "video" : "image";
+
+        setUploadedMediaId(mediaId);
+        setUploadedMediaUrl(publicUrl);
 
         // Moderate uploaded media via backend proxy (images and videos)
         try {
           const modRes = await api.post(
             "/api/v1/media/moderate",
-            { file_url: data?.data?.public_url, media_type: mediaType, user: undefined },
+            { file_url: publicUrl, media_type: mediaType, user: undefined },
             {
               headers: { Authorization: `Bearer ${accessToken}` },
               withCredentials: true,
@@ -164,7 +164,6 @@ export default function CreatePostModal({
           );
           const modData = modRes.data;
           if (!modData?.is_safe) {
-            // cleanup uploaded media
             if (mediaId) {
               try {
                 await api.delete(`/api/v1/media/${mediaId}`, {
@@ -174,32 +173,12 @@ export default function CreatePostModal({
               } catch {
                 // ignore cleanup errors
               }
-              setUnsafeReason(
-                modData?.reason ||
-                "Sensitive Content. Failed to upload. Action has been reported to the administrators."
-              );
-              setUnsafeMediaType("image"); 
-              setUnsafeModalOpen(true);
-              setFile(null);
-              setPreview(null);
-              setUploadedMediaId(null);
-              setUploadedMediaUrl(null);
-              setLoading(false);
-              return;
-            }
-          } catch (modErr: any) {
-            try {
-              await api.delete(`/api/v1/media/${mediaId}`, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-                withCredentials: true,
-              });
-            } catch {
-              // ignore cleanup errors
             }
             setUnsafeReason(
-              "Sensitive Content. Failed to upload. Action has been reported to the administrators."
+              modData?.reason ||
+                "Sensitive Content. Failed to upload. Action has been reported to the administrators."
             );
-            setUnsafeMediaType("image");
+            setUnsafeMediaType(mediaType || "image");
             setUnsafeModalOpen(true);
             setFile(null);
             setPreview(null);
@@ -208,6 +187,28 @@ export default function CreatePostModal({
             setLoading(false);
             return;
           }
+        } catch (modErr: any) {
+          if (mediaId) {
+            try {
+              await api.delete(`/api/v1/media/${mediaId}`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                withCredentials: true,
+              });
+            } catch {
+              // ignore cleanup errors
+            }
+          }
+          setUnsafeReason(
+            "Sensitive Content. Failed to upload. Action has been reported to the administrators."
+          );
+          setUnsafeMediaType(mediaType || "image");
+          setUnsafeModalOpen(true);
+          setFile(null);
+          setPreview(null);
+          setUploadedMediaId(null);
+          setUploadedMediaUrl(null);
+          setLoading(false);
+          return;
         }
       }
 
