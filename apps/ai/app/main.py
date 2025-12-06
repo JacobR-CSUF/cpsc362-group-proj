@@ -1,5 +1,7 @@
 # /root/apps/ai/app/main.py
-from fastapi import FastAPI, UploadFile, File, HTTPException, status, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, status, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+import os
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -56,6 +58,26 @@ app = FastAPI(
     title="AI Service",
     description="AI features: Transcription, Moderation, Summarization",
     version="1.2.0"
+)
+
+# CORS (allow web/app to call AI service)
+default_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8001",
+    "https://project.geeb.pp.ua",
+]
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOW_ORIGINS", ",".join(default_origins)).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -119,7 +141,8 @@ async def moderate_image(
                 status_code=400,
                 detail="file_url is required when file is not provided.",
             )
-        resolved_url = resolve_minio_url(file_url)
+        normalized_url = file_url.rstrip("/")
+        resolved_url = resolve_minio_url(normalized_url)
         logger.info(f"Resolved URL: {file_url} -> {resolved_url}")
 
         # download from presigned URL
@@ -513,7 +536,11 @@ async def process_image(request: ImagePipelineRequest):
     """
     Process image through moderation pipeline.
     """
-    logger.info(f"Image pipeline request: {request.file_url}")
+    logger.info(
+        "Image pipeline request: %s | user=%s",
+        request.file_url,
+        getattr(request, "user", None),
+    )
 
     try:
         result = await ImagePipelineService.process(request)
