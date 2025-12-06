@@ -8,7 +8,7 @@ import { CommentsModal } from "@/components/comments/CommentsModal";
 import { MediaViewerModal } from "@/components/media/MediaViewerModal";
 import { LikeButton } from "@/components/LikeButton";
 
-const API_BASE = "http://localhost:8001";
+const API_BASE = "https://api.geeb.pp.ua";
 
 interface PostAuthor {
   user_id: string;
