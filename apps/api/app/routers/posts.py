@@ -17,7 +17,7 @@ from ..dependencies import get_current_user as require_user
 
 router = APIRouter(prefix="/posts", tags=["Posts"])
 bearer_scheme = HTTPBearer(auto_error=True)
-SELECT_FIELDS = "*, users(username, profile_pic), media(id, public_url, media_type, caption)"
+SELECT_FIELDS = "*, users(username, profile_pic), media(id, public_url, media_type, caption, transcription_url)"
 
 # ---------- Pydantic Models ----------
 
@@ -43,6 +43,7 @@ class MediaInfo(BaseModel):
     public_url: str
     media_type: Optional[str] = None  # 'image' | 'video'
     caption: Optional[str] = None
+    transcription_url: Optional[str] = None
 
 class PostResponse(BaseModel):
     id: UUID4
@@ -86,7 +87,8 @@ def _row_to_post(row: Dict[str, Any]) -> PostResponse:
             id=media_data["id"],
             public_url=media_data.get("public_url") or "",  
             media_type=media_data.get("media_type"),
-            caption=media_data.get("caption")
+            caption=media_data.get("caption"),
+            transcription_url=media_data.get("transcription_url"),
         )
     
     return PostResponse(
