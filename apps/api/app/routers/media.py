@@ -4,7 +4,7 @@ Handles file uploads to MinIO with Supabase fallback
 """
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 from uuid import UUID, uuid4
 import os
@@ -13,6 +13,7 @@ from pathlib import Path
 from ..services.supabase_client import SupabaseClient
 from ..services.minio_client import get_minio_service
 from ..dependencies import get_current_user
+from ..services.ai_client import AIServiceClient  
 
 router = APIRouter(prefix="/media", tags=["media"])
 
@@ -40,6 +41,11 @@ class MediaUploadResponse(BaseModel):
     success: bool
     data: MediaMetadata
     message: str
+
+class EmotionResult(BaseModel):
+    top_emotion: str
+    score: float
+    all_scores: Dict[str, float]
 
 def validate_file_type(filename: str, content_type: str) -> tuple[bool, str]:
     """Validate file type based on extension and MIME type"""
@@ -312,3 +318,56 @@ async def delete_media(
             detail=f"Delete failed: {str(e)}"
         )
 
+@router.get("/{file_id}/emotion", response_model=EmotionResult)
+async def get_media_emotion(
+    file_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Run emotion detection on an image media and return the result.
+
+    Only works for image media_type; video will return 400.
+    """
+    try:
+        # 1) Load media metadata from Supabase
+        result = SupabaseClient.query(
+            "media",
+            id=file_id,
+        )
+
+        if not result or len(result) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Media not found",
+            )
+
+        media = result[0]
+
+        # Optionally check ownership or visibility
+        # For now we just require authenticated user.
+        if media["media_type"] != "image":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Emotion detection is only supported for images.",
+            )
+
+        public_url = media["public_url"]
+
+        # 2) Call AI service (emotion detect)
+        ai_result = await AIServiceClient.detect_emotion(public_url)
+
+        # AI service already returns:
+        # { "top_emotion": ..., "score": ..., "all_scores": {...} }
+        return EmotionResult(
+            top_emotion=ai_result.get("top_emotion"),
+            score=ai_result.get("score"),
+            all_scores=ai_result.get("all_scores", {}),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Emotion detection failed: {str(e)}",
+        )
