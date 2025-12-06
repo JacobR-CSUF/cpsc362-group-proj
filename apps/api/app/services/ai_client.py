@@ -23,6 +23,7 @@ class AIServiceClient:
         language: Optional[str] = None,
         summary_style: str = "brief",
         skip_moderation: bool = False,
+        skip_summary: bool = False,  
         timeout: float = 300.0  # 5 minutes for long videos
     ) -> Dict[str, Any]:
         """
@@ -64,19 +65,49 @@ class AIServiceClient:
         """
         async with httpx.AsyncClient(timeout=timeout) as client:
             try:
+                payload: Dict[str, Any] = {
+                    "file_url": file_url,
+                    "skip_moderation": skip_moderation,
+                }
+
+                if language is not None:
+                    payload["language"] = language
+
+                # ✅ 요약 스킵 여부에 따라 payload 분기
+                if skip_summary:
+                    payload["skip_summary"] = True
+                else:
+                    payload["skip_summary"] = False
+                    # summary_style이 있으면 같이 넘겨서 요약까지 수행
+                    if summary_style is not None:
+                        payload["summary_style"] = summary_style
+
                 response = await client.post(
-                    f"{AI_SERVICE_URL}/process-image",
-                    json={
-                        "file_url": file_url,
-                        "safety_level": safety_level
-                    }
+                    f"{AI_SERVICE_URL}/process-video",
+                    json=payload,
                 )
                 response.raise_for_status()
                 return response.json()
 
             except httpx.HTTPError as e:
-                logger.error(f"AI service image processing failed: {e}")
+                logger.error(f"AI service video processing failed: {e}")
                 raise
+
+        # async with httpx.AsyncClient(timeout=timeout) as client:
+        #     try:
+        #         response = await client.post(
+        #             f"{AI_SERVICE_URL}/process-image",
+        #             json={
+        #                 "file_url": file_url,
+        #                 "safety_level": safety_level
+        #             }
+        #         )
+        #         response.raise_for_status()
+        #         return response.json()
+
+        #     except httpx.HTTPError as e:
+        #         logger.error(f"AI service image processing failed: {e}")
+        #         raise
 
     @staticmethod
     async def is_image_safe(file_url: str, safety_level: str = "moderate") -> bool:
