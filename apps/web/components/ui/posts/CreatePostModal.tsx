@@ -147,11 +147,11 @@ export default function CreatePostModal({
       onClick={onClose}
     >
       <div
-        className="w-[600px] max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-8 shadow-xl relative no-scrollbar"
+        className="w-[600px] max-h-[90vh] overflow-y-auto rounded-2xl bg-white border-4 border-green-300 p-8 shadow-xl relative no-scrollbar"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Title */}
-        <h2 className="mb-6 text-center text-xl font-medium tracking-[0.7em]">
+        <h2 className="mb-6 text-center text-xl font-medium tracking-[0.7em] text-green-700">
           LET'S POST SOMETHING
         </h2>
 
@@ -159,18 +159,18 @@ export default function CreatePostModal({
         <div className="mb-6">
           {!preview ? (
             <div
-              className="flex h-[420px] w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-4 border-black/40 bg-gray-100/30 hover:bg-gray-200"
+              className="flex h-[420px] w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-4 border-green-300 bg-green-50 hover:bg-green-100 transition-colors"
               onClick={() => fileInputRef.current?.click()}
             >
-              <div className="border-4 border-black/40 p-12 rounded-xl">
-                <span className="text-6xl text-gray-500">📷</span>
+              <div className="border-4 border-green-400 p-12 rounded-xl bg-white">
+                <span className="text-6xl">📷</span>
               </div>
 
-              <p className="mt-4 text-gray-500">Click to upload</p>
+              <p className="mt-4 text-green-700 font-medium">Click to upload</p>
             </div>
           ) : (
             <div
-              className="relative mb-3 overflow-hidden rounded-[10px] border border-black/10 bg-black/5 cursor-pointer"
+              className="relative mb-3 overflow-hidden rounded-2xl border-4 border-green-300 bg-black/5 cursor-pointer"
               onClick={() => {
                 setMediaUrl(preview!);
                 setMediaType(file?.type.startsWith("video/") ? "video" : "image");
@@ -218,7 +218,7 @@ export default function CreatePostModal({
 
               {/* CLEAR BUTTON */}
               <button
-                className="absolute right-2 top-2 z-10 rounded-full bg-white/80 px-3 py-1 text-black shadow hover:bg-white"
+                className="absolute right-2 top-2 z-10 rounded-full bg-red-500 hover:bg-red-600 px-3 py-1 text-white font-semibold shadow transition-colors"
                 onClick={(e) => {
                   e.stopPropagation(); // prevent modal from opening
                   setPreview(null);
@@ -242,7 +242,7 @@ export default function CreatePostModal({
         {/* Caption */}
         <div className="mb-6">
           <textarea
-            className="w-full rounded-xl border-2 border-black/40 p-4 text-lg resize-none"
+            className="w-full rounded-xl border-2 border-green-300 focus:border-green-500 focus:ring-2 focus:ring-green-200 p-4 text-lg resize-none outline-none transition-all"
             rows={5}
             placeholder="What's on your mind?"
             maxLength={2000}
@@ -260,7 +260,7 @@ export default function CreatePostModal({
         <button
           onClick={handleSubmit}
           disabled={loading}
-          className="w-full rounded-2xl bg-[#000000] py-3 text-center text-2xl font-bold tracking-[0.7em] text-white shadow-md hover:brightness-105 disabled:opacity-50"
+          className="w-full rounded-2xl bg-green-600 hover:bg-green-700 py-3 text-center text-2xl font-bold tracking-[0.7em] text-white shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? "POSTING..." : "SEND"}
         </button>

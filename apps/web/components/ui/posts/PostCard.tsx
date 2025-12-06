@@ -66,24 +66,24 @@ export function PostCard({
 
   return (
     <article
-      className={`w-full rounded-[10px] bg-white p-4 shadow-md ${className}`}
+      className={`w-full rounded-lg bg-white border-2 border-green-200 p-4 shadow-md hover:border-green-300 transition-colors ${className}`}
     >
       <header className="mb-3 flex items-center gap-3">
         {post?.author?.profile_pic ? (
           <img
             src={post.author.profile_pic}
             alt={`${post.author.username}'s avatar`}
-            className="h-10 w-10 rounded-full object-cover"
+            className="h-10 w-10 rounded-full object-cover border-2 border-green-300"
           />
         ) : (
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-200 text-sm font-semibold">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 border-2 border-green-300 text-sm font-semibold text-green-700">
             {avatarFallback}
           </div>
         )}
         <div className="min-w-0">
           <Link
             href={`/${post.author.username}`}
-            className="text-sm font-semibold hover:underline"
+            className="text-sm font-semibold text-green-700 hover:text-green-600 hover:underline"
           >
             {post.author.username}
           </Link>
@@ -96,7 +96,7 @@ export function PostCard({
       {post.media && post.media.public_url && (
         <button
           type="button"
-          className="mb-3 w-full cursor-pointer overflow-hidden rounded-[10px] border border-black/10 bg-black/5"
+          className="mb-3 w-full cursor-pointer overflow-hidden rounded-lg border-2 border-green-200 bg-black/5 hover:border-green-300 transition-colors"
           onClick={() => setMediaModalOpen(true)}
         >
           {post.media.media_type === "image" ? (

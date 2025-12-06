@@ -33,25 +33,25 @@ export default function FeedPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-green-100">
         <Navbar onPostCreated={refreshPosts} />
         
         <main className="mx-auto max-w-2xl px-4 py-8">
           {/* Loading State */}
           {loading && (
             <div className="flex items-center justify-center py-12">
-              <div className="text-lg text-gray-600">Loading posts...</div>
+              <div className="text-lg text-green-800 font-semibold">Loading posts...</div>
             </div>
           )}
 
           {/* Error State */}
           {error && (
-            <div className="rounded-lg bg-red-50 p-4 text-red-700">
+            <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-red-700">
               <p className="font-semibold">Error loading posts</p>
               <p className="text-sm">{error}</p>
               <button
                 onClick={refreshPosts}
-                className="mt-2 text-sm underline hover:no-underline"
+                className="mt-2 text-sm text-green-600 underline hover:no-underline"
               >
                 Try again
               </button>
@@ -60,7 +60,7 @@ export default function FeedPage() {
 
           {/* Empty State */}
           {!loading && !error && posts && posts.length === 0 && (
-            <div className="rounded-lg bg-white p-8 text-center shadow">
+            <div className="rounded-lg bg-white border-2 border-green-300 p-8 text-center shadow-sm">
               <p className="text-lg text-gray-600">No posts yet</p>
               <p className="mt-2 text-sm text-gray-500">
                 Be the first to create a post!
