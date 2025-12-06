@@ -174,6 +174,7 @@ class ImagePipelineRequest(BaseModel):
         default=SafetyLevel.MODERATE,
         description="Safety threshold: strict, moderate, or lenient"
     )
+    user: Optional[str] = Field(None, description="Username initiating the request (for logging)")
 
 
 # ============================================================
@@ -518,11 +519,13 @@ class ImagePipelineService:
         overall_verdict = PipelineVerdict.SAFE
         is_safe = True
 
-        file_url = str(request.file_url)
+        file_url = str(request.file_url).rstrip("/")
 
         logger.info("=" * 60)
         logger.info(f"IMAGE PIPELINE STARTED")
         logger.info(f"URL: {file_url[:80]}...")
+        if request.user:
+            logger.info(f"User: {request.user}")
         logger.info(f"Safety level: {request.safety_level.value}")
         logger.info("=" * 60)
 
