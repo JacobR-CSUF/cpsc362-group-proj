@@ -111,6 +111,29 @@ class AIServiceClient:
             logger.error(f"Video safety check failed: {e}")
             return False  # Fail safe
 
+    @staticmethod
+    async def detect_emotion(
+        file_url: str,
+        timeout: float = 30.0,
+    ) -> Dict[str, Any]:
+        """
+        Call AI service /emotion/detect endpoint for an image URL.
+
+        Returns:
+            Dict with top_emotion, score, all_scores.
+        """
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            try:
+                # AI service expects file_url as query parameter
+                resp = await client.post(
+                    f"{AI_SERVICE_URL}/emotion/detect",
+                    params={"file_url": file_url},
+                )
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.HTTPError as e:
+                logger.error(f"AI service emotion detection failed: {e}")
+                raise
 
 # Convenience functions
 async def check_media_safety(file_url: str, media_type: str) -> Dict[str, Any]:
