@@ -125,6 +125,7 @@ export default function CreatePostModal({
     try {
       let mediaId = uploadedMediaId;
       let mediaType: "image" | "video" | null = null;
+      let publicUrl = uploadedMediaUrl;
 
       // If a new file is selected, upload it first
       if (file) {
@@ -162,33 +163,26 @@ export default function CreatePostModal({
           return; // stop execution
         }
 
-        // Extract media information from upload response
-        const mediaData = data?.data ?? {};
-        mediaId = mediaData.id ?? null; // update outer mediaId
-        const publicUrl: string | null = mediaData.public_url ?? null;
+        mediaId = data?.data?.id ?? null;
+        publicUrl = data?.data?.public_url ?? null;
+        mediaType = file.type.startsWith("video/") ? "video" : "image";
 
-        // Keep uploaded media info in state
         setUploadedMediaId(mediaId);
         setUploadedMediaUrl(publicUrl);
 
-        // Detect media type from file
-        mediaType = file.type.startsWith("video/") ? "video" : "image";
-
-        // If this is an image, run additional moderation on the public URL
-        if (file.type.startsWith("image/") && mediaId && publicUrl) {
-          try {
-            const modRes = await api.post(
-              "/api/v1/media/moderate",
-              { file_url: publicUrl, user: undefined },
-              {
-                headers: { Authorization: `Bearer ${accessToken}` },
-                withCredentials: true,
-              }
-            );
-            const modData = modRes.data;
-
-            // If moderation says "not safe", delete the media and show warning
-            if (!modData?.is_safe) {
+        // Moderate uploaded media via backend proxy (images and videos)
+        try {
+          const modRes = await api.post(
+            "/api/v1/media/moderate",
+            { file_url: publicUrl, media_type: mediaType, user: undefined },
+            {
+              headers: { Authorization: `Bearer ${accessToken}` },
+              withCredentials: true,
+            }
+          );
+          const modData = modRes.data;
+          if (!modData?.is_safe) {
+            if (mediaId) {
               try {
                 await api.delete(`/api/v1/media/${mediaId}`, {
                   headers: { Authorization: `Bearer ${accessToken}` },
@@ -197,35 +191,13 @@ export default function CreatePostModal({
               } catch {
                 // Ignore cleanup errors
               }
-
-              setUnsafeReason(
-                modData?.reason ||
-                "Sensitive Content. Failed to upload. Action has been reported to the administrators."
-              );
-              setUnsafeMediaType("image");
-              setUnsafeModalOpen(true);
-              setFile(null);
-              setPreview(null);
-              setUploadedMediaId(null);
-              setUploadedMediaUrl(null);
-              setLoading(false);
-              return;
-            }
-          } catch (modErr) {
-            // If moderation request itself fails, delete media and show generic warning
-            try {
-              await api.delete(`/api/v1/media/${mediaId}`, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-                withCredentials: true,
-              });
-            } catch {
-              // Ignore cleanup errors
             }
 
             setUnsafeReason(
-              "Sensitive Content. Failed to upload. Action has been reported to the administrators."
+              modData?.reason ||
+                "Sensitive Content. Failed to upload. Action has been reported to the administrators."
             );
-            setUnsafeMediaType("image");
+            setUnsafeMediaType(mediaType || "image");
             setUnsafeModalOpen(true);
             setFile(null);
             setPreview(null);
@@ -234,6 +206,28 @@ export default function CreatePostModal({
             setLoading(false);
             return;
           }
+        } catch (modErr: any) {
+          if (mediaId) {
+            try {
+              await api.delete(`/api/v1/media/${mediaId}`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                withCredentials: true,
+              });
+            } catch {
+              // ignore cleanup errors
+            }
+          }
+          setUnsafeReason(
+            "Sensitive Content. Failed to upload. Action has been reported to the administrators."
+          );
+          setUnsafeMediaType(mediaType || "image");
+          setUnsafeModalOpen(true);
+          setFile(null);
+          setPreview(null);
+          setUploadedMediaId(null);
+          setUploadedMediaUrl(null);
+          setLoading(false);
+          return;
         }
         // If this is a video, run moderation using AI pipeline
         if (file.type.startsWith("video/") && mediaId && publicUrl) {
