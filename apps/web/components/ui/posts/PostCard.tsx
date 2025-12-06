@@ -9,6 +9,7 @@ import { CommentsPreview } from "@/components/comments/CommentsPreview";
 import { LikeButton } from "@/components/LikeButton";
 import { MediaViewerModal } from "@/components/media/MediaViewerModal";
 import { useComments } from "@/hooks/useComments";
+import { useAuth } from "@/hooks/useAuth";
 
 export interface PostAuthorSummary {
   user_id: string;
@@ -43,6 +44,8 @@ export function PostCard({
   commentsHook,
   className = "",
 }: PostCardProps) {
+  const { user } = useAuth();
+  
   const fallbackHook = useComments(
     commentsHook ? null : post?.id ?? null
   );
@@ -82,7 +85,7 @@ export function PostCard({
         )}
         <div className="min-w-0">
           <Link
-            href={`/${post.author.username}`}
+            href={user?.id === post.author.user_id ? '/me' : `/${post.author.username}`}
             className="text-sm font-semibold text-green-700 hover:text-green-600 hover:underline"
           >
             {post.author.username}
