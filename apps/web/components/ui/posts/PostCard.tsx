@@ -179,8 +179,7 @@ export function PostCard({
 
             {/* AI actions: transcript / summary / emotion */}
             <PostActions
-                mediaId={post.media?.id ?? null}
-                mediaType={post.media?.media_type ?? null}
+              mediaId={post.media?.id ?? null}
             />
 
             {/* Likes / comments row */}
