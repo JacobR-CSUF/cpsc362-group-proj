@@ -49,16 +49,17 @@ export default function CreatePostModal({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  // MediaModal
+  // Media viewer modal
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video" | null>(null);
 
-  // UnsafeContentModal
+  // Unsafe content modal
   const [unsafeModalOpen, setUnsafeModalOpen] = useState(false);
   const [unsafeReason, setUnsafeReason] = useState<string>("");
-  const [unsafeMediaType, setUnsafeMediaType] = useState<"image" | "video">("image");
-
+  const [unsafeMediaType, setUnsafeMediaType] = useState<"image" | "video">(
+    "image"
+  );
 
   // Avoid SSR/client mismatches for any browser-only APIs used in this modal
   useEffect(() => {
@@ -71,20 +72,35 @@ export default function CreatePostModal({
   // -------------------------
   // HANDLERS
   // -------------------------
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
 
-    if (!["video/mp4", "video/webm", "video/ogg", "video/quicktime", "image/png", "image/jpeg", "image/webp", "image/gif"].includes(f.type)) {
+    // Validate allowed mime types
+    if (
+      ![
+        "video/mp4",
+        "video/webm",
+        "video/ogg",
+        "video/quicktime",
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+      ].includes(f.type)
+    ) {
       setError("Invalid file type.");
       return;
     }
 
+    // Limit file size to 50 MB
     if (f.size > 50 * 1024 * 1024) {
       setError("File too large (max 50MB).");
       return;
     }
 
+    // Local preview URL
     setPreview(URL.createObjectURL(f));
     setFile(f);
     setError(null);
@@ -127,7 +143,7 @@ export default function CreatePostModal({
 
         const data = uploadRes.data;
 
-        // Check for unsafe-content flag from backend
+        // Check for unsafe-content flag from backend (legacy safeguard)
         if (
           uploadRes.status === 400 &&
           typeof data?.detail === "string" &&
@@ -136,7 +152,9 @@ export default function CreatePostModal({
             data.detail.includes("inappropriate"))
         ) {
           setUnsafeReason(data.detail);
-          setUnsafeMediaType(file.type.startsWith("video/") ? "video" : "image");
+          setUnsafeMediaType(
+            file.type.startsWith("video/") ? "video" : "image"
+          );
           setUnsafeModalOpen(true);
           setFile(null);
           setPreview(null);
@@ -144,14 +162,19 @@ export default function CreatePostModal({
           return; // stop execution
         }
 
-        mediaId = data?.data?.id ?? null;
+        // Extract media information from upload response
+        const mediaData = data?.data ?? {};
+        mediaId = mediaData.id ?? null; // update outer mediaId
+        const publicUrl: string | null = mediaData.public_url ?? null;
+
+        // Keep uploaded media info in state
         setUploadedMediaId(mediaId);
-        setUploadedMediaUrl(data?.data?.public_url ?? null);
-        mediaId = data?.data?.id || null;
-        setUploadedMediaId(mediaId);
-        setUploadedMediaUrl(data?.data?.public_url || null);
+        setUploadedMediaUrl(publicUrl);
+
+        // Detect media type from file
         mediaType = file.type.startsWith("video/") ? "video" : "image";
 
+        // If this is an image, run additional moderation on the public URL
         if (file.type.startsWith("image/") && mediaId && publicUrl) {
           try {
             const modRes = await api.post(
@@ -163,21 +186,23 @@ export default function CreatePostModal({
               }
             );
             const modData = modRes.data;
+
+            // If moderation says "not safe", delete the media and show warning
             if (!modData?.is_safe) {
-              // cleanup uploaded media
               try {
                 await api.delete(`/api/v1/media/${mediaId}`, {
                   headers: { Authorization: `Bearer ${accessToken}` },
                   withCredentials: true,
                 });
               } catch {
-                // ignore cleanup errors
+                // Ignore cleanup errors
               }
+
               setUnsafeReason(
                 modData?.reason ||
                 "Sensitive Content. Failed to upload. Action has been reported to the administrators."
               );
-              setUnsafeMediaType("image"); 
+              setUnsafeMediaType("image");
               setUnsafeModalOpen(true);
               setFile(null);
               setPreview(null);
@@ -187,14 +212,16 @@ export default function CreatePostModal({
               return;
             }
           } catch (modErr) {
+            // If moderation request itself fails, delete media and show generic warning
             try {
               await api.delete(`/api/v1/media/${mediaId}`, {
                 headers: { Authorization: `Bearer ${accessToken}` },
                 withCredentials: true,
               });
             } catch {
-              // ignore cleanup errors
+              // Ignore cleanup errors
             }
+
             setUnsafeReason(
               "Sensitive Content. Failed to upload. Action has been reported to the administrators."
             );
@@ -210,6 +237,7 @@ export default function CreatePostModal({
         }
       }
 
+      // Create the post with caption and optional media_id
       await api.post(
         "/api/v1/posts",
         { caption, media_id: mediaId },
@@ -219,12 +247,14 @@ export default function CreatePostModal({
         }
       );
 
+      // Reset local state after successful post
       setCaption("");
       setFile(null);
       setPreview(null);
       setUploadedMediaId(null);
       setUploadedMediaUrl(null);
 
+      // Notify parent and close modal
       onPostCreated();
       onClose();
     } catch (err: any) {
@@ -249,7 +279,7 @@ export default function CreatePostModal({
         >
           {/* Title */}
           <h2 className="mb-6 text-center text-xl font-medium tracking-[0.7em] text-green-700">
-            LET'S POST SOMETHING
+            LET&apos;S POST SOMETHING
           </h2>
 
           {/* Upload Box */}
@@ -263,14 +293,18 @@ export default function CreatePostModal({
                   <span className="text-6xl">📷</span>
                 </div>
 
-                <p className="mt-4 text-green-700 font-medium">Click to upload</p>
+                <p className="mt-4 text-green-700 font-medium">
+                  Click to upload
+                </p>
               </div>
             ) : (
               <div
                 className="relative mb-3 overflow-hidden rounded-2xl border-4 border-green-300 bg-black/5 cursor-pointer"
                 onClick={() => {
                   setMediaUrl(preview!);
-                  setMediaType(file?.type.startsWith("video/") ? "video" : "image");
+                  setMediaType(
+                    file?.type.startsWith("video/") ? "video" : "image"
+                  );
                   setMediaModalOpen(true);
                 }}
               >
@@ -335,7 +369,7 @@ export default function CreatePostModal({
             <textarea
               className="w-full rounded-xl border-2 border-green-300 focus:border-green-500 focus:ring-2 focus:ring-green-200 p-4 text-lg resize-none outline-none transition-all"
               rows={5}
-              placeholder="What's on your mind?"
+              placeholder="What&apos;s on your mind?"
               maxLength={2000}
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
@@ -345,7 +379,9 @@ export default function CreatePostModal({
             </p>
           </div>
 
-          {error && <p className="mb-4 text-center text-red-500">{error}</p>}
+          {error && (
+            <p className="mb-4 text-center text-red-500">{error}</p>
+          )}
 
           {/* Submit Button */}
           <button
