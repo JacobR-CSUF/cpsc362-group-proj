@@ -53,7 +53,7 @@ class MinIOService:
                 object_name,
                 file_path
             )
-            return f"http://localhost:9000/{self.bucket_name}/{object_name}"
+            return self.generate_public_url(object_name)
         except S3Error as e:
             raise Exception(f"Failed to upload file: {e}")
 
@@ -80,7 +80,7 @@ class MinIOService:
 
     def generate_public_url(self, object_name: str) -> str:
         """Generate public URL for object"""
-        minio_public_endpoint = os.getenv("MINIO_PUBLIC_ENDPOINT", "http://localhost:9000")
+        minio_public_endpoint = os.getenv("MINIO_PUBLIC_ENDPOINT", "https://cdn.geeb.pp.ua")
         return f"{minio_public_endpoint}/{self.bucket_name}/{object_name}"
 
     def file_exists(self, object_name: str) -> bool:

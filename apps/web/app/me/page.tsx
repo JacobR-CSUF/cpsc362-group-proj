@@ -12,7 +12,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { UnsafeContentModal } from "@/components/ui/common/UnsafeContentModal";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+  process.env.NEXT_PUBLIC_API_URL ?? "https://api.geeb.pp.ua";
 
 type ProfileUser = {
   id: string;
