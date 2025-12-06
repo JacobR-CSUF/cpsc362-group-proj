@@ -9,6 +9,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { MediaViewerModal } from "@/components/media/MediaViewerModal";
 import { Navbar } from "@/components/layout/Navbar";
+import { UnsafeContentModal } from "@/components/ui/common/UnsafeContentModal";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
@@ -37,6 +38,11 @@ export default function MePage() {
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
+  const [unsafeModalOpen, setUnsafeModalOpen] = useState(false);
+  const [unsafeReason, setUnsafeReason] = useState<string | undefined>(undefined);
+  const [deleteInput, setDeleteInput] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   async function moderateProfileImage(
     fileUrl: string
@@ -199,9 +205,9 @@ export default function MePage() {
       const moderation = await moderateProfileImage(publicUrl);
       if (!moderation.isSafe) {
         await deleteMedia(mediaId, token);
-        throw new Error(
-          "Sensitive Content. Failed to upload. Action has been reported to the administrators."
-        );
+        setUnsafeReason(moderation.reason);
+        setUnsafeModalOpen(true);
+        return;
       }
 
       const updateRes = await fetch(
@@ -248,6 +254,39 @@ export default function MePage() {
   const joined = profile.created_at
     ? new Date(profile.created_at).toLocaleDateString()
     : "Unknown";
+
+  const handleDeleteAccount = async () => {
+    if (deleteInput.trim() !== profile.username) {
+      setDeleteError("Username does not match. Please type your username to confirm.");
+      return;
+    }
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setDeleteError("Missing access token. Please log in again.");
+      return;
+    }
+    const confirmed = confirm("Are you sure you want to delete your account? This cannot be undone.");
+    if (!confirmed) return;
+
+    setDeletingAccount(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/users/me`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to delete account.");
+      }
+      localStorage.removeItem("access_token");
+      router.replace("/login");
+    } catch (err: any) {
+      setDeleteError(err?.message || "Could not delete account.");
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-green-100">
@@ -342,6 +381,42 @@ export default function MePage() {
             "https://placehold.co/180x180?text=Profile"
           }
           mediaType="image"
+        />
+
+        <div className="mt-12 rounded-2xl border-2 border-red-300 bg-red-50 p-6">
+          <h3 className="mb-3 text-lg font-semibold text-red-700">Delete Account</h3>
+          <p className="mb-3 text-sm text-red-600">
+            This action is permanent. Type your username to confirm deletion.
+          </p>
+          <input
+            type="text"
+            className="mb-3 w-full rounded-md border border-red-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-1 focus:ring-red-500"
+            placeholder={`Type "${profile.username}" to confirm`}
+            value={deleteInput}
+            onChange={(e) => setDeleteInput(e.target.value)}
+            disabled={deletingAccount}
+          />
+          {deleteError && (
+            <p className="mb-2 text-sm text-red-600">{deleteError}</p>
+          )}
+          <button
+            type="button"
+            onClick={handleDeleteAccount}
+            disabled={deletingAccount || deleteInput.trim() !== profile.username}
+            className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {deletingAccount ? "Deleting..." : "Delete My Account"}
+          </button>
+        </div>
+
+        <UnsafeContentModal
+          open={unsafeModalOpen}
+          onClose={() => setUnsafeModalOpen(false)}
+          mediaType="image"
+          reason={
+            unsafeReason ||
+            "Sensitive Content. Failed to upload. Action has been reported to the administrators."
+          }
         />
       </div>
     </div>
