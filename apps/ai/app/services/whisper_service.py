@@ -7,9 +7,8 @@ import subprocess
 import tempfile
 from functools import partial
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
-from typing import Dict, List, Any, Optional, Tuple, Union, cast
 
 import httpx
 import whisper
@@ -72,6 +71,7 @@ class TranscribeResponse(BaseModel):
     segments: List[Segment]
     duration: float
     media_duration: Optional[float] = None
+    vtt: Optional[str] = None
 
 
 async def _get_model():
@@ -139,6 +139,37 @@ def _probe_duration(file_path: str) -> Optional[float]:
         return None  #  Returns None on error
     except Exception:
         return None  #  Swallows errors
+
+
+def _format_timestamp(seconds: float) -> str:
+    """Format seconds as WebVTT timestamp (HH:MM:SS.mmm)."""
+    total_ms = max(int(round(seconds * 1000)), 0)
+    hours, remainder = divmod(total_ms, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    secs, millis = divmod(remainder, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
+
+
+def _segments_to_vtt(segments: List[Dict[str, Any]]) -> str:
+    """Convert Whisper segments into a simple WebVTT string."""
+    lines: List[str] = ["WEBVTT", ""]
+
+    for segment in segments:
+        start = segment.get("start")
+        end = segment.get("end")
+        text = str(segment.get("text", "")).strip()
+
+        if start is None or end is None or not text:
+            continue
+
+        start_ts = _format_timestamp(float(start))
+        end_ts = _format_timestamp(float(end))
+
+        lines.append(f"{start_ts} --> {end_ts}")
+        lines.append(text)
+        lines.append("")
+
+    return "\n".join(lines).strip()
 
 
 async def _download_to_temp(url: str) -> Tuple[Path, Optional[str]]:
@@ -231,10 +262,12 @@ async def transcribe_from_url(file_url: str, language: Optional[str] = None) -> 
         duration = 0.0
 
     media_duration = _probe_duration(str(temp_path))
+    vtt_text = _segments_to_vtt(segments) if segments else None
 
     return {
         "text": result.get("text", "").strip(),
         "segments": segments,
         "duration": duration,
         "media_duration": media_duration,
+        "vtt": vtt_text,
     }

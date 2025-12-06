@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 import os
 from dotenv import load_dotenv
 
-from .routers import auth, users, health, posts, likes, comments, media
+from .routers import auth, users, health, posts, likes, comments, media, media_ai
 from .services.supabase_client import SupabaseClient
 
 load_dotenv()
@@ -21,9 +21,23 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# CORS
+default_origins = [
+    "https://project.geeb.pp.ua",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "https://project.geeb.pp.ua",
+]
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOW_ORIGINS", ",".join(default_origins)).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -108,6 +122,7 @@ app.include_router(auth.router)
 app.include_router(posts.router, prefix="/api/v1") 
 app.include_router(likes.router)
 app.include_router(media.router, prefix="/api/v1")
+app.include_router(media_ai.router, prefix="/api/v1")
 
 if __name__ == "__main__":
     import uvicorn

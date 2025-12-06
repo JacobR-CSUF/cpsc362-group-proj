@@ -236,15 +236,16 @@ services:
 
   
   # ============================================================
-  # AI SERVICE - CPU MODE (Default, runs without any profile)
+  # s SERVICE - CPU MODE (Default, runs without any profile)
   # ============================================================
   ai:
     build:
       context: ./apps/ai
       dockerfile: Dockerfile
     container_name: social_media_ai
-    ports:
-      - "0.0.0.0:8002:8002"
+    # Do not publish externally; only available on the internal network
+    expose:
+      - "8002"
     env_file:
       - ./apps/ai/.env
     environment:
@@ -270,8 +271,9 @@ services:
       dockerfile: Dockerfile
     container_name: social_media_ai_gpu
     profiles: ["gpu"]  # Only starts with: docker-compose --profile gpu up
-    ports:
-      - "0.0.0.0:8002:8002"
+    # Do not publish externally; only available on the internal network
+    expose:
+      - "8002"
     env_file:
       - ./apps/ai/.env
     environment:
@@ -294,6 +296,58 @@ services:
       - api
     networks:
       - app-network
+
+  # ============================================================
+  # WEB FRONTEND - Next.js Application
+  # ============================================================
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: development  # Use 'production' for prod builds
+    container_name: nextjs_web
+    ports:
+      - "0.0.0.0:3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - NEXT_PUBLIC_SUPABASE_URL=http://localhost:8000
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+    volumes:
+      # Mount source code for hot reloading in development
+      - ./apps/web:/app
+      - /components
+      - /app/node_modules  # Preserve container's node_modules
+      - /app/.next         # Preserve build cache
+    depends_on:
+      - api
+      - kong
+    networks:
+      - app-network
+
+  # ============================================================
+  # WEB FRONTEND - PRODUCTION BUILD (Use with --profile prod)
+  # ============================================================
+  web-prod:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: production
+    container_name: nextjs_web_prod
+    profiles: ["prod"]
+    ports:
+      - "0.0.0.0:3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://api:8001
+      - NEXT_PUBLIC_SUPABASE_URL=http://kong:8000
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+    depends_on:
+      - api
+      - kong
+    networks:
+      - app-network
+
 
 networks:
   app-network:
