@@ -1,67 +1,51 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  PostCard,
-  type PostCardPost,
-} from "@/components/ui/posts/PostCard";
-import { useParams } from "next/navigation";
-import { MediaViewerModal } from "@/components/media/MediaViewerModal";
+import { useParams, useRouter } from "next/navigation";
+import { PostCard, type PostCardPost } from "@/components/ui/posts/PostCard";
+import { Navbar } from "@/components/layout/Navbar";
+import { useAuth } from "@/hooks/useAuth";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
-type ProfileUser = {
+type UserProfile = {
   id: string;
   username: string;
   created_at: string;
-  profile_pic: string | null;
+  profile_pic?: string | null;
 };
 
-interface UserProfilePageProps {
-  params: { username: string };
-}
+export default function UserProfilePage() {
+  const params = useParams();
+  const router = useRouter();
+  const username = params.username as string;
+  const { user: currentUser } = useAuth();
 
-export default function UserProfilePage({
-  params,
-}: UserProfilePageProps) {
-  const paramsFromHook = useParams<{ username?: string }>();
-  const username =
-    paramsFromHook?.username ||
-    (typeof params?.username === "string" ? params.username : undefined);
-
-  const [user, setUser] = useState<ProfileUser | null>(null);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [posts, setPosts] = useState<PostCardPost[]>([]);
-  const [postsLoading, setPostsLoading] = useState(false);
-  const [postsError, setPostsError] = useState<string | null>(null);
-  const [avatarModalOpen, setAvatarModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  
+  useEffect(() => {
+    if (currentUser && currentUser.username === username) {
+      router.replace('/me');
+    }
+  }, [currentUser, username, router]);
 
   useEffect(() => {
-    const controller = new AbortController();
+    if (!username) return;
 
-    async function fetchUser() {
-      if (!username) {
-        setNotFound(true);
-        setProfileLoading(false);
-        return;
-      }
-
-      setProfileLoading(true);
-      setProfileError(null);
-      setNotFound(false);
+    async function loadUserProfile() {
+      setLoading(true);
+      setError(null);
 
       try {
         const token = localStorage.getItem("access_token");
-        const res = await fetch(
-          `${API_BASE}/api/v1/users/username/${encodeURIComponent(
-            username
-          )}`,
+    
+        const postsRes = await fetch(
+          `${API_BASE}/api/v1/posts?page=1&limit=100`,
           {
-            signal: controller.signal,
             headers: {
               accept: "application/json",
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -69,162 +53,89 @@ export default function UserProfilePage({
           }
         );
 
-        if (res.status === 404) {
-          setNotFound(true);
-          setUser(null);
-          return;
+        if (!postsRes.ok) {
+          throw new Error("Failed to load posts");
         }
 
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || `Failed to load user (${res.status})`);
+        const postsData = await postsRes.json();
+        const allPosts = (postsData.data ?? postsData.results ?? []) as PostCardPost[];
+        
+        // Filter posts by this username
+        const userPosts = allPosts.filter(p => p.author.username === username);
+        
+        if (userPosts.length === 0) {
+          throw new Error("User not found");
         }
 
-        const json = await res.json();
-        const data = json.data ?? json;
-        if (!data) {
-          setNotFound(true);
-          setUser(null);
-          return;
-        }
-        setUser(data);
+        // Get user info from the first post
+        const userInfo = userPosts[0].author;
+        setProfile({
+          id: userInfo.user_id,
+          username: userInfo.username,
+          profile_pic: userInfo.profile_pic,
+          created_at: userPosts[0].created_at, // Approximate
+        });
+
+        setPosts(userPosts);
       } catch (err: any) {
-        if (err.name === "AbortError") return;
-        setProfileError(err.message || "Failed to load profile.");
-        setUser(null);
+        setError(err.message || "Failed to load profile");
       } finally {
-        setProfileLoading(false);
+        setLoading(false);
       }
     }
 
-    fetchUser();
-    return () => controller.abort();
+    loadUserProfile();
   }, [username]);
 
-  useEffect(() => {
-    if (!user || notFound) {
-      setPosts([]);
-      return;
-    }
-
-    const controller = new AbortController();
-
-    async function fetchPosts() {
-      setPostsLoading(true);
-      setPostsError(null);
-
-      try {
-        const token = localStorage.getItem("access_token");
-        const res = await fetch(
-          `${API_BASE}/api/v1/posts/user/${user.id}?page=1&limit=20`,
-          {
-            signal: controller.signal,
-            headers: {
-              accept: "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-          }
-        );
-
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || `Failed to load posts (${res.status})`);
-        }
-
-        const json = await res.json();
-        const list = (json.data ?? json.results ?? []) as PostCardPost[];
-        setPosts(list);
-      } catch (err: any) {
-        if (err.name === "AbortError") return;
-        setPostsError(err.message || "Failed to load posts");
-        setPosts([]);
-      } finally {
-        setPostsLoading(false);
-      }
-    }
-
-    fetchPosts();
-    return () => controller.abort();
-  }, [user, notFound]);
-
-  if (profileLoading) {
-    return <p className="py-10 text-center">Loading profile...</p>;
-  }
-
-  if (notFound) {
+  if (loading) {
     return (
-      <div className="py-20 text-center text-gray-500">
-        User <span className="font-semibold">{username}</span> not
-        found.
+      <div className="min-h-screen bg-green-100">
+        <Navbar />
+        <p className="p-10 text-center text-green-700">Loading profile...</p>
       </div>
     );
   }
 
-  if (!user) {
+  if (error || !profile) {
     return (
-      <p className="py-10 text-center">
-        {profileError ?? "Could not load profile."}
-      </p>
+      <div className="min-h-screen bg-green-100">
+        <Navbar />
+        <div className="p-10 text-center">
+          <p className="text-red-500">{error || "User not found"}</p>
+        </div>
+      </div>
     );
   }
-
-  const joined = user.created_at
-    ? new Date(user.created_at).toLocaleDateString()
-    : "Unknown";
 
   return (
-    <div className="w-full px-2 py-10 sm:px-4">
-      <div className="mb-10 flex flex-col items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setAvatarModalOpen(true)}
-          className="relative"
-          aria-label="View profile picture"
-        >
+    <div className="min-h-screen bg-green-100">
+      <Navbar />
+      
+      <div className="w-full px-2 py-10 sm:px-4">
+        <div className="mb-10 flex flex-col items-center gap-3">
           <img
-            src={
-              user.profile_pic ??
-              "https://placehold.co/180x180?text=Profile"
-            }
-            alt={`${user.username}'s avatar`}
-            className="h-40 w-40 rounded-full object-cover"
+            src={profile.profile_pic ?? "https://placehold.co/180x180?text=Profile"}
+            alt={`${profile.username}'s avatar`}
+            className="h-40 w-40 rounded-full object-cover border-4 border-green-300"
           />
-        </button>
 
-        <h1 className="text-3xl font-semibold">{user.username}</h1>
+          <h1 className="text-3xl font-semibold text-gray-800">{profile.username}</h1>
+        </div>
 
-        <p className="text-sm text-gray-500">Joined: {joined}</p>
+        <hr className="-mx-4 my-8 border-t-2 border-green-300" />
+
+        <h2 className="text-2xl font-bold text-gray-800 text-center mb-6">Posts</h2>
+
+        {posts.length === 0 && (
+          <p className="text-center text-gray-600">No posts yet.</p>
+        )}
+
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 justify-items-stretch">
+          {posts.map((post) => (
+            <PostCard key={post.id} post={post} />
+          ))}
+        </div>
       </div>
-
-      <hr className="-mx-4 my-8 border-t-2 border-black/20" />
-
-      {postsError && (
-        <p className="mb-4 text-center text-sm text-red-500">
-          {postsError}
-        </p>
-      )}
-
-      {postsLoading && <p className="text-center">Loading posts...</p>}
-
-      {!postsLoading && !postsError && posts.length === 0 && (
-        <p className="text-center text-gray-500">No posts found.</p>
-      )}
-
-      <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 justify-items-stretch">
-        {posts.map((post) => (
-          <PostCard key={post.id} post={post} />
-        ))}
-      </div>
-
-      <MediaViewerModal
-        isOpen={avatarModalOpen}
-        onClose={() => setAvatarModalOpen(false)}
-        mediaUrl={
-          user.profile_pic ??
-          "https://placehold.co/180x180?text=Profile"
-        }
-        mediaType="image"
-      />
     </div>
   );
 }
