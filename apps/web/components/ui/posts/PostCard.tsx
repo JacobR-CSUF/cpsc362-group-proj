@@ -11,6 +11,10 @@ import { MediaViewerModal } from "@/components/media/MediaViewerModal";
 import { useComments } from "@/hooks/useComments";
 import { useAuth } from "@/hooks/useAuth";
 import { PostActions } from "@/components/ui/posts/PostActions";
+import {
+  EmotionResultModal,
+  EmotionResult,
+} from "@/components/ui/posts/EmotionResultModal";
 
 export interface PostAuthorSummary {
   user_id: string;
@@ -64,6 +68,11 @@ export function PostCard({
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const [emotionModalOpen, setEmotionModalOpen] = useState(false);
+  const [emotionResult, setEmotionResult] = useState<EmotionResult | null>(null);
+  const [emotionLoading, setEmotionLoading] = useState(false);
+  const [emotionError, setEmotionError] = useState<string | null>(null);
+
   const avatarFallback =
     post?.author?.username?.[0]?.toUpperCase() ?? "?";
 
@@ -95,6 +104,46 @@ export function PostCard({
     } catch (err) {
       alert("Failed to delete post. Please try again.");
       setDeleting(false);
+    }
+  };
+
+  const handleEmotionAnalyze = async () => {
+    // 이미지 없는 경우 early return
+    if (!post.media?.public_url || post.media.media_type !== "image") {
+      return;
+    }
+
+    try {
+      setEmotionLoading(true);
+      setEmotionError(null);
+
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+      if (!baseUrl) {
+        throw new Error("NEXT_PUBLIC_API_URL is not defined");
+      }
+
+      const res = await fetch(
+        `${baseUrl}/emotion/detect?file_url=${encodeURIComponent(
+          post.media.public_url
+        )}`,
+        {
+          method: "POST",
+        }
+      );
+
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || "Emotion API returned non-OK");
+      }
+
+      const data: EmotionResult = await res.json();
+      setEmotionResult(data);
+      setEmotionModalOpen(true);
+    } catch (err: any) {
+      console.error("Emotion detection failed:", err);
+      setEmotionError("Emotion detection failed. Please try again.");
+    } finally {
+      setEmotionLoading(false);
     }
   };
 
@@ -171,7 +220,8 @@ export function PostCard({
         <p className="mb-3 text-sm text-gray-900">{post.caption}</p>
       )}
 
-      <PostActions mediaId={post.media?.id ?? null} />
+      <PostActions mediaId={post.media?.id ?? null} 
+        mediaPublicUrl={post.media?.public_url ?? null}/>
 
       <div className="mt-2 mb-2 flex items-center gap-4">
         <LikeButton initialCount={post.likes_count ?? 0} />
@@ -208,6 +258,11 @@ export function PostCard({
         transcriptionUrl={post.media?.transcription_url ?? null}
         mediaId={post.media?.id ?? null}
         sourceLabel="PostCard"
+      />
+      <EmotionResultModal
+        open={emotionModalOpen}
+        onClose={() => setEmotionModalOpen(false)}
+        result={emotionResult}
       />
     </article>
   );

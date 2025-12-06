@@ -7,7 +7,8 @@ const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
 
 interface PostActionsProps {
-    mediaId: string | null; // media_id from posts table
+    mediaId: string | null;
+    mediaPublicUrl?: string | null;  // ✅ 추가
 }
 
 // Shape of emotion analysis result
@@ -17,7 +18,7 @@ type EmotionResult = {
     allScores: Record<string, number>;
 };
 
-export function PostActions({ mediaId }: PostActionsProps) {
+export function PostActions({ mediaId, mediaPublicUrl }: PostActionsProps) {
     // Transcript / summary state
     const [transcript, setTranscript] = useState<string | null>(null);
     const [summary, setSummary] = useState<string | null>(null);
@@ -172,7 +173,7 @@ export function PostActions({ mediaId }: PostActionsProps) {
             }
 
             const body = await res.json();
-            // expected shape from AI service: { top_emotion, score, all_scores }
+            // BE EmotionResponse: { media_id, top_emotion, score, all_scores }
             const result: EmotionResult = {
                 topEmotion: body.top_emotion,
                 score: body.score,
@@ -187,6 +188,7 @@ export function PostActions({ mediaId }: PostActionsProps) {
             setLoadingEmotion(false);
         }
     }
+
 
     return (
         <div className="mt-3 space-y-3">
