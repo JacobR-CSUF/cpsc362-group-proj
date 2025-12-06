@@ -21,6 +21,7 @@ interface PostMedia {
   public_url: string;
   media_type: "image" | "video";
   caption: string | null;
+  transcription_url?: string | null;
 }
 
 interface Post {
@@ -45,6 +46,7 @@ export default function TestCommentsPage() {
   const [mediaModalOpen, setMediaModalOpen] = useState(false);
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video" | null>(null);
+  const [transcriptionUrl, setTranscriptionUrl] = useState<string | null>(null);
 
   const {
     comments,
@@ -105,6 +107,7 @@ export default function TestCommentsPage() {
     if (!post?.media) return;
     setMediaUrl(post.media.public_url);
     setMediaType(post.media.media_type);
+    setTranscriptionUrl(post.media.transcription_url ?? null);
     setMediaModalOpen(true);
   };
 
@@ -226,6 +229,7 @@ export default function TestCommentsPage() {
         onClose={() => setMediaModalOpen(false)}
         mediaUrl={mediaUrl}
         mediaType={mediaType}
+        transcriptionUrl={transcriptionUrl}
       />
     </div>
   );

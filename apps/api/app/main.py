@@ -21,9 +21,23 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# CORS
+default_origins = [
+    "https://project.geeb.pp.ua",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "https://project.geeb.pp.ua",
+]
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOW_ORIGINS", ",".join(default_origins)).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

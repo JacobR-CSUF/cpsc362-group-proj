@@ -9,10 +9,13 @@ from datetime import datetime
 from uuid import UUID, uuid4
 import os
 from pathlib import Path
+import asyncio
+import logging
+import httpx
 
-from ..services.supabase_client import SupabaseClient
-from ..services.minio_client import get_minio_service
 from ..dependencies import get_current_user
+from ..services.minio_client import get_minio_service
+from ..services.supabase_client import SupabaseClient
 from ..services.ai_client import AIServiceClient  
 
 router = APIRouter(prefix="/media", tags=["media"])
@@ -23,6 +26,9 @@ ALLOWED_VIDEO_TYPES = {"video/mp4", "video/quicktime", "video/x-matroska"}
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov", ".mkv"}
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
 MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100MB
+AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://ai:8002")
+
+logger = logging.getLogger(__name__)
 
 # Pydantic Models
 class MediaMetadata(BaseModel):
@@ -35,17 +41,38 @@ class MediaMetadata(BaseModel):
     public_url: str
     uploaded_by: str
     caption: Optional[str] = None
+    transcription_url: Optional[str] = None
     created_at: Optional[datetime] = None 
 
 class MediaUploadResponse(BaseModel):
     success: bool
     data: MediaMetadata
     message: str
+    
+class MediaModerationRequest(BaseModel):
+    file_url: str
+    user: Optional[str] = None
+
+class MediaModerationResponse(BaseModel):
+    is_safe: bool
+    reason: Optional[str] = None
+class EmotionResult(BaseModel):
+    top_emotion: str
+    score: float
+    all_scores: Dict[str, float]
 
 class EmotionResult(BaseModel):
     top_emotion: str
     score: float
     all_scores: Dict[str, float]
+
+class MediaModerationRequest(BaseModel):
+    file_url: str
+    user: Optional[str] = None
+
+class MediaModerationResponse(BaseModel):
+    is_safe: bool
+    reason: Optional[str] = None
 
 def validate_file_type(filename: str, content_type: str) -> tuple[bool, str]:
     """Validate file type based on extension and MIME type"""
@@ -74,6 +101,82 @@ def generate_unique_filename(original_filename: str) -> str:
     file_ext = Path(original_filename).suffix.lower()
     unique_id = str(uuid4())
     return f"{unique_id}{file_ext}"
+
+
+def _format_timestamp(seconds: float) -> str:
+    """Format seconds as WebVTT timestamp (HH:MM:SS.mmm)."""
+    total_ms = max(int(round(seconds * 1000)), 0)
+    hours, remainder = divmod(total_ms, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    secs, millis = divmod(remainder, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
+
+
+def _segments_to_vtt(segments) -> Optional[str]:
+    """Convert Whisper-like segments into a WebVTT string."""
+    if not segments:
+        return None
+
+    lines = ["WEBVTT", ""]
+    for segment in segments:
+        start = segment.get("start")
+        end = segment.get("end")
+        text = str(segment.get("text", "")).strip()
+        if start is None or end is None or not text:
+            continue
+        lines.append(f"{_format_timestamp(float(start))} --> {_format_timestamp(float(end))}")
+        lines.append(text)
+        lines.append("")
+
+    return "\n".join(lines).strip() if len(lines) > 2 else None
+
+
+async def _transcribe_video_and_store_vtt(media_id: str, public_url: str, minio_service):
+    """Call AI service to transcribe video, store VTT in MinIO, and update Supabase."""
+    if not AI_SERVICE_URL:
+        logger.warning("AI_SERVICE_URL not configured; skipping transcription.")
+        return
+
+    transcription_url: Optional[str] = None
+
+    try:
+        async with httpx.AsyncClient(timeout=600) as client:
+            resp = await client.post(
+                f"{AI_SERVICE_URL.rstrip('/')}/transcribe",
+                json={"file_url": public_url},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        logger.error("Transcription request failed for media %s: %s", media_id, exc)
+        return
+
+    vtt_text = data.get("vtt")
+    if not vtt_text:
+        vtt_text = _segments_to_vtt(data.get("segments"))
+
+    if not vtt_text:
+        logger.warning("No VTT content generated for media %s", media_id)
+        return
+
+    try:
+        vtt_bytes = vtt_text.encode("utf-8")
+        vtt_filename = f"{media_id}.vtt"
+        transcription_url = minio_service.upload_file_bytes(
+            vtt_bytes,
+            vtt_filename,
+            "text/vtt",
+        )
+    except Exception as exc:
+        logger.error("Failed to store VTT for media %s: %s", media_id, exc)
+        return
+
+    try:
+        SupabaseClient.update("media", {"transcription_url": transcription_url}).eq("id", media_id).execute()
+    except Exception as exc:
+        logger.error("Failed to update transcription_url for media %s: %s", media_id, exc)
+        # We still keep the uploaded VTT in storage for manual linking.
+        return
 
 
 # AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://ai:8002")
@@ -202,6 +305,16 @@ async def upload_media(
         # SupabaseClient.insert already returns the inserted row dict
         saved_media = response if isinstance(response, dict) else media_data
 
+        # Kick off background transcription for videos
+        if media_type == "video":
+            asyncio.create_task(
+                _transcribe_video_and_store_vtt(
+                    media_id=media_id,
+                    public_url=public_url,
+                    minio_service=minio_service,
+                )
+            )
+
         return MediaUploadResponse(
             success=True,
             data=MediaMetadata(**saved_media),
@@ -217,6 +330,56 @@ async def upload_media(
         )
     finally:
         await file.close()
+
+
+@router.post("/moderate", response_model=MediaModerationResponse)
+async def moderate_media(
+    payload: MediaModerationRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Proxy image moderation through AI service so the client doesn't call AI directly."""
+    if not AI_SERVICE_URL:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Moderation service unavailable",
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.post(
+                f"{AI_SERVICE_URL.rstrip('/')}/process-image",
+                json={
+                    "file_url": payload.file_url,
+                    "safety_level": "moderate",
+                    "user": payload.user or current_user.get("username"),
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        logger.error(
+            "Moderation proxy failed user_id=%s username=%s file_url=%s error=%s",
+            current_user.get("id"),
+            current_user.get("username"),
+            payload.file_url,
+            str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Sensitive Content. Failed to upload. Action has been reported to the administrators.",
+        )
+
+    is_safe = bool(data.get("is_safe", False))
+    reason = data.get("moderation", {}).get("reason") if isinstance(data.get("moderation"), dict) else data.get("reason")
+    if not is_safe:
+        logger.warning(
+            "Unsafe media detected user_id=%s username=%s file_url=%s reason=%s",
+            current_user.get("id"),
+            current_user.get("username"),
+            payload.file_url,
+            reason,
+        )
+    return MediaModerationResponse(is_safe=is_safe, reason=reason)
 
 @router.get("/{file_id}", response_model=MediaMetadata)
 async def get_media(
@@ -255,7 +418,8 @@ async def get_media(
             public_url=media["public_url"],
             uploaded_by=media["uploaded_by"],
             caption=media.get("caption"),
-            created_at=media.get("created_at")
+            created_at=media.get("created_at"),
+            transcription_url=media.get("transcription_url"),
         )
 
     except HTTPException:

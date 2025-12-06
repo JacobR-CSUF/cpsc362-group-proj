@@ -1,11 +1,16 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { Captions } from "./Captions";
 
 interface MediaViewerModalProps {
   isOpen: boolean;
   onClose: () => void;
   mediaUrl: string | null;
   mediaType: "image" | "video" | null;
+  transcriptionUrl?: string | null;
+  transcription_url?: string | null; // allow snake_case payloads directly
+  mediaId?: string | null;
+  sourceLabel?: string | null;
 }
 
 export function MediaViewerModal({
@@ -13,9 +18,19 @@ export function MediaViewerModal({
   onClose,
   mediaUrl,
   mediaType,
+  transcriptionUrl = null,
+  transcription_url = null,
+  mediaId = null,
+  sourceLabel = null,
 }: MediaViewerModalProps) {
+  const resolvedTranscriptionUrl = transcription_url ?? transcriptionUrl ?? null;
   const [scale, setScale] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [currentTime, setCurrentTime] = useState(0);
+  const [captions, setCaptions] = useState<string>("");
+  const [captionsError, setCaptionsError] = useState<string | null>(null);
+  const [captionsLoading, setCaptionsLoading] = useState(false);
+  const [captionsStatus, setCaptionsStatus] = useState<string>("idle");
 
   const dragging = useRef(false);
   const last = useRef({ x: 0, y: 0 });
@@ -35,6 +50,58 @@ export function MediaViewerModal({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
+
+  useEffect(() => {
+    // Reset transform + captions when modal closes/opens
+    if (!isOpen) {
+      setScale(1);
+      setPos({ x: 0, y: 0 });
+      setCurrentTime(0);
+      setCaptions("");
+      setCaptionsError(null);
+      setCaptionsLoading(false);
+      setCaptionsStatus("idle");
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+  }, [isOpen]);
+
+  useEffect(() => {
+    // Fetch captions when modal is open and a transcription URL exists (even if mediaType is mis-set)
+    if (!isOpen || !resolvedTranscriptionUrl) {
+      setCaptions("");
+      setCaptionsError(null);
+      setCaptionsLoading(false);
+      setCaptionsStatus("none");
+      return;
+    }
+
+    const controller = new AbortController();
+    const fetchCaptions = async () => {
+      setCaptionsLoading(true);
+      setCaptionsError(null);
+      setCaptionsStatus("loading");
+      try {
+        const res = await fetch(resolvedTranscriptionUrl, { signal: controller.signal, mode: "cors" });
+        if (!res.ok) throw new Error(`Failed to load captions (${res.status})`);
+        const text = await res.text();
+        setCaptions(text);
+        setCaptionsStatus(text.trim() ? "ready" : "empty");
+      } catch (err: any) {
+        if (controller.signal.aborted) return;
+        setCaptionsError(err?.message || "Unable to load captions");
+        setCaptions("");
+        setCaptionsStatus("error");
+      } finally {
+        if (!controller.signal.aborted) setCaptionsLoading(false);
+      }
+    };
+
+    fetchCaptions();
+    return () => controller.abort();
+  }, [isOpen, mediaType, resolvedTranscriptionUrl]);
 
   if (!isOpen || !mediaUrl || !mediaType) return null;
 
@@ -140,14 +207,38 @@ export function MediaViewerModal({
                 onDragStart={(e) => e.preventDefault()}
               />
             ) : (
-              <video
-                src={mediaUrl}
-                controls
-                autoPlay
-                className="max-h-[80vh] max-w-[85vw] object-contain"
-                draggable={false}
-                onDragStart={(e) => e.preventDefault()}
-              />
+              <div className="relative max-h-[80vh] max-w-[85vw]">
+                <video
+                  src={mediaUrl}
+                  controls
+                  autoPlay
+                  className="max-h-[80vh] max-w-[85vw] object-contain"
+                  draggable={false}
+                  onDragStart={(e) => e.preventDefault()}
+                  onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                />
+
+                {captionsLoading && (
+                  <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-4">
+                    <span className="rounded-md bg-black/70 px-3 py-1 text-xs text-white">
+                      Loading captions...
+                    </span>
+                  </div>
+                )}
+
+                {captionsError && (
+                  <div className="pointer-events-none absolute inset-0 flex items-end justify-center pb-4">
+                    <span className="rounded-md bg-black/70 px-3 py-1 text-xs text-red-200">
+                      {captionsError}
+                    </span>
+                  </div>
+                )}
+
+                {!captionsLoading && !captionsError && captions && (
+                  <Captions subtitlesText={captions} currentTime={currentTime} />
+                )}
+
+              </div>
             )}
           </div>
         </div>

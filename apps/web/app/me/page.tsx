@@ -38,6 +38,46 @@ export default function MePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [avatarPreviewOpen, setAvatarPreviewOpen] = useState(false);
 
+  async function moderateProfileImage(
+    fileUrl: string
+  ): Promise<{ isSafe: boolean; reason?: string }> {
+    try {
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(`${API_BASE}/api/v1/media/moderate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          file_url: fileUrl,
+          user: profile.username,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Moderation failed (${res.status})`);
+      }
+      const data = await res.json();
+      return { isSafe: !!data?.is_safe, reason: data?.reason };
+    } catch (err: any) {
+      throw new Error(
+        "Sensitive Content. Failed to upload. Action has been reported to the administrators."
+      );
+    }
+  }
+
+  async function deleteMedia(mediaId: string, token: string) {
+    try {
+      await fetch(`${API_BASE}/api/v1/media/${mediaId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // Best-effort cleanup; ignore errors.
+    }
+  }
+
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       router.replace("/login");
@@ -72,7 +112,15 @@ export default function MePage() {
         }
 
         const data = await res.json();
-        const list = (data.data ?? data.results ?? []) as PostCardPost[];
+        const list = ((data.data ?? data.results ?? []) as PostCardPost[]).map(
+          (p) => ({
+            ...p,
+            media: p.media
+              ? { ...p.media, transcription_url: p.media.transcription_url ?? null }
+              : null,
+          })
+        );
+
         setPosts(list);
       } catch (err: any) {
         if (err.name === "AbortError") return;
@@ -138,8 +186,22 @@ export default function MePage() {
 
       const uploadJson = await uploadRes.json();
       const publicUrl = uploadJson?.data?.public_url;
+      const mediaId = uploadJson?.data?.id;
       if (!publicUrl) {
         throw new Error("Upload succeeded but no URL returned.");
+      }
+
+      // Moderate profile image (handles GIFs via backend pipeline)
+      if (!mediaId) {
+        throw new Error("Upload missing media id for moderation.");
+      }
+
+      const moderation = await moderateProfileImage(publicUrl);
+      if (!moderation.isSafe) {
+        await deleteMedia(mediaId, token);
+        throw new Error(
+          "Sensitive Content. Failed to upload. Action has been reported to the administrators."
+        );
       }
 
       const updateRes = await fetch(

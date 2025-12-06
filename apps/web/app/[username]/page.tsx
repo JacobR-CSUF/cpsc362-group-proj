@@ -61,7 +61,14 @@ export default function UserProfilePage() {
         const allPosts = (postsData.data ?? postsData.results ?? []) as PostCardPost[];
         
         // Filter posts by this username
-        const userPosts = allPosts.filter(p => p.author.username === username);
+        const userPosts = allPosts
+          .filter((p) => p.author.username === username)
+          .map((p) => ({
+            ...p,
+            media: p.media
+              ? { ...p.media, transcription_url: p.media.transcription_url ?? null }
+              : null,
+          }));
         
         if (userPosts.length === 0) {
           throw new Error("User not found");

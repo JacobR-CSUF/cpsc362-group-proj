@@ -17,7 +17,7 @@ from ..dependencies import get_current_user as require_user
 
 router = APIRouter(prefix="/posts", tags=["Posts"])
 bearer_scheme = HTTPBearer(auto_error=True)
-SELECT_FIELDS = "*, users(username, profile_pic), media(id, public_url, media_type, caption)"
+SELECT_FIELDS = "*, users(username, profile_pic), media(id, public_url, media_type, caption, transcription_url)"
 
 # ---------- Pydantic Models ----------
 
@@ -43,6 +43,7 @@ class MediaInfo(BaseModel):
     public_url: str
     media_type: Optional[str] = None  # 'image' | 'video'
     caption: Optional[str] = None
+    transcription_url: Optional[str] = None
 
 class PostResponse(BaseModel):
     id: UUID4
@@ -86,7 +87,8 @@ def _row_to_post(row: Dict[str, Any]) -> PostResponse:
             id=media_data["id"],
             public_url=media_data.get("public_url") or "",  
             media_type=media_data.get("media_type"),
-            caption=media_data.get("caption")
+            caption=media_data.get("caption"),
+            transcription_url=media_data.get("transcription_url"),
         )
     
     return PostResponse(
@@ -385,15 +387,9 @@ def update_post(
 @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_post(
     post_id: UUID4,
-    delete_media: bool = Query(False, description="Also delete associated media file"),
     current: AuthUser = Depends(current_auth)
 ):
-    """
-    Delete a post
-    
-    - delete_media=true: Also deletes the associated media file and record
-    - delete_media=false (default): Only deletes the post, keeps media
-    """
+    """Delete a post and any associated media record/object."""
     db = _rls_client(current.access_token)
     
     # Check ownership and get media_id
@@ -421,8 +417,8 @@ def delete_post(
     if getattr(res, "error", None):
         raise HTTPException(status_code=400, detail=res.error.message)
     
-    # Optionally delete media
-    if delete_media and media_id:
+    # Always delete associated media if present
+    if media_id:
         try:
             # Get media details for MinIO deletion
             media_res = (
@@ -433,25 +429,21 @@ def delete_post(
                 .execute()
             )
             
-            if media_res.data:
-                # Verify user still owns the media
-                if media_res.data["uploaded_by"] == current.user_id:
-                    # Extract filename from URL for MinIO deletion
-                    url = media_res.data["public_url"]
-                    filename = url.split("/")[-1] if "/" in url else url
-                    
-                    # Delete from MinIO
-                    try:
-                        from ..services.minio_client import get_minio_service
-                        minio_service = get_minio_service()
-                        minio_service.delete_file(filename)
-                    except Exception as minio_err:
-                        print(f"Warning: Failed to delete from MinIO: {minio_err}")
-                    
-                    # Delete from database
-                    db.table("media").delete().eq("id", str(media_id)).execute()
+            if media_res.data and media_res.data.get("uploaded_by") == current.user_id:
+                url = media_res.data.get("public_url") or ""
+                filename = url.split("/")[-1] if "/" in url else url
+                
+                # Delete from MinIO
+                try:
+                    from ..services.minio_client import get_minio_service
+                    minio_service = get_minio_service()
+                    minio_service.delete_file(filename)
+                except Exception as minio_err:
+                    print(f"Warning: Failed to delete from MinIO: {minio_err}")
+                
+                # Delete from database
+                db.table("media").delete().eq("id", str(media_id)).execute()
         except Exception as e:
-            # Log error but don't fail the post deletion
             print(f"Warning: Failed to delete media: {e}")
-    
+
     return None
