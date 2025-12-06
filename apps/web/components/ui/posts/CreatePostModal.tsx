@@ -229,6 +229,62 @@ export default function CreatePostModal({
           setLoading(false);
           return;
         }
+        // If this is a video, run moderation using AI pipeline
+        if (file.type.startsWith("video/") && mediaId && publicUrl) {
+          try {
+            // full pipeline → transcription + moderation
+            const modRes = await api.get(
+              `/api/v1/media-ai/${mediaId}/summary`,
+              {
+                headers: { Authorization: `Bearer ${accessToken}` },
+                withCredentials: true,
+              }
+            );
+
+            const modData = modRes.data?.result || modRes.data;
+
+            // Backend returns moderation inside "text_moderation"
+            const moderation = modData?.result?.text_moderation || modData?.text_moderation;
+
+            if (moderation && moderation.verdict === "unsafe") {
+              // delete uploaded media
+              try {
+                await api.delete(`/api/v1/media/${mediaId}`, {
+                  headers: { Authorization: `Bearer ${accessToken}` }
+                });
+              } catch { }
+
+              setUnsafeReason(moderation.explanation || "This video contains unsafe content.");
+              setUnsafeMediaType("video");
+              setUnsafeModalOpen(true);
+
+              setFile(null);
+              setPreview(null);
+              setUploadedMediaId(null);
+              setUploadedMediaUrl(null);
+              setLoading(false);
+              return;
+            }
+          } catch (videoErr) {
+            // Fail-safe: block upload if moderation fails
+            try {
+              await api.delete(`/api/v1/media/${mediaId}`, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+              });
+            } catch { }
+
+            setUnsafeReason("Video moderation failed. Try again later.");
+            setUnsafeMediaType("video");
+            setUnsafeModalOpen(true);
+
+            setFile(null);
+            setPreview(null);
+            setUploadedMediaId(null);
+            setUploadedMediaUrl(null);
+            setLoading(false);
+            return;
+          }
+        }
       }
 
       // Create the post with caption and optional media_id
