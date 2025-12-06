@@ -32,6 +32,7 @@ CREATE TABLE media (
   public_url TEXT NOT NULL,
   uploaded_by UUID NOT NULL,
   caption TEXT,
+  transcription_url TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_media_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE CASCADE
 );
