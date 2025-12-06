@@ -22,6 +22,7 @@ function mapToPostCardPost(post: Post): PostCardPost {
       public_url: post.media.public_url,
       media_type: post.media.media_type as 'image' | 'video',
       caption: post.media.caption,
+      transcription_url: post.media.transcription_url ?? null,
     } : null,
     created_at: post.created_at,
     likes_count: post.likes_count,
